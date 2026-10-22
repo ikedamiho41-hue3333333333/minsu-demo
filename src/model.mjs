@@ -1,4 +1,5 @@
-import {matchQinghuanGuides} from './qinghuan.mjs';
+import {matchQinghuanGuides,analyzeQinghuanQuestion} from './qinghuan.mjs';
+import {requestedScopes,scopeLabel,scopeKey,relevantFacts,intersection,difference,configurationQuestion,precautions} from './answer-scopes.mjs';
 
 const clone=x=>structuredClone(x);
 const own=(obj,key)=>Object.hasOwn(obj,key);
@@ -38,76 +39,97 @@ export function createSeed(){
 }
 
 export function answer(state,question,context=null){
- const p=state.published,q=norm(question),sources=[],parts=[];
+ const p=state.published,q=norm(question),sources=[],parts=[],missing=[];
+ let needsClarification=false;
  if(!state.visible)return {status:'unavailable',body:'本民宿资料暂时停止展示，请联系管家。',sources:[]};
  if(context?.roomId&&!p.rooms.some(r=>r.id===context.roomId))return {status:'needs_clarification',body:'这个房间不在本民宿当前公开资料中，请重新选择房间。',sources:[]};
- const add=(key,label,text,metadata={})=>{sources.push({key,label,text,version:p.version,...metadata});parts.push(text);};
+ const add=(key,label,text,metadata={})=>{if(sources.some(source=>source.key===key))return;sources.push({key,label,text,version:p.version,...metadata});parts.push(text);};
  const guideMetadata=k=>({kind:k.kind,requiresHuman:k.requiresHuman!==false,sourceLabel:k.sourceLabel,sourceRange:k.sourceRange});
  const addKnowledge=k=>add('knowledge:'+k.id,k.question,k.text,k.kind==='confirmation_guide'?guideMetadata(k):{});
- const roomQuestion=/房间|房型|床|卫浴|浴室|几人|几个人|住几|面积|楼层|几楼/.test(q);
- const contextualQuestion=/开放|时间|几点|这里|这个空间/.test(q)&&['独立庭院','共享厨房','共享客厅'].includes(context?.spaceName)?q+norm(context.spaceName):q;
- const matched=Object.entries(TOPICS).filter(([,t])=>t.pattern.test(contextualQuestion));
- const guideMatches=matchQinghuanGuides(p,question),knowledgeIds=guideMatches.map(guide=>guide.id);
  const pendingGuide=k=>k.kind==='confirmation_guide'&&k.requiresHuman!==false;
+ const analysis=analyzeQinghuanQuestion(p,question),guideMatches=analysis.guides,knowledgeIds=guideMatches.map(guide=>guide.id);
  const exactKnowledge=p.knowledge.find(k=>!pendingGuide(k)&&[k.question,...k.aliases].some(a=>norm(a)===q));
- const guides=guideMatches.filter(pendingGuide);
- if(guideMatches.length&&!exactKnowledge){
-  const covered=new Set(guideMatches.flatMap(guide=>guide.topics??[])),extraMissing=[];
-  let extraQuestion=q;
-  const guidePhrases=guideMatches.flatMap(guide=>[guide.question,...guide.aliases]).map(norm).filter(Boolean).sort((a,b)=>b.length-a.length);
-  for(const phrase of guidePhrases)extraQuestion=extraQuestion.replaceAll(phrase,'');
-  const extraMatched=Object.entries(TOPICS).filter(([,topic])=>topic.pattern.test(extraQuestion));
-  for(const guide of guideMatches){
-   const pending=pendingGuide(guide);
-   const known=(guide.topics??[]).filter(key=>p.facts[key]?.text?.trim());
-   for(const key of known)if(!sources.some(source=>source.key===key))add(key,TOPICS[key]?.label||key,p.facts[key].text);
-   if(!pending&&known.length)continue;
-   const body=known.length?`${guide.question}\n其余待确认项：${guide.confirmationChecklist}（以上公开规则已明确的部分除外）。`:guide.text;
-   add('knowledge:'+guide.id,guide.id+(pending?' · 待确认指南':' · 已确认公开答复'),body,guideMetadata(guide));
-  }
-  for(const [key,topic] of extraMatched){
-   const fact=p.facts[key];
-   if(fact?.text?.trim()){if(!sources.some(source=>source.key===key))add(key,topic.label,fact.text);}
-   else if(!covered.has(key))extraMissing.push(topic.label);
-  }
-  if(extraMissing.length)parts.push(`本店资料尚未记录${extraMissing.join('、')}，我暂时无法确认。可以点击下方「请管家确认」，把问题交给民宿管家。`);
-  return {status:guides.length||extraMissing.length?'needs_human':'answered',body:parts.join('\n\n'),sources,knowledgeIds};
- }
- let needsClarification=false,missing=[];
+ const contextualQuestion=/开放|时间|几点|这里|这个空间/.test(q)&&['独立庭院','共享厨房','共享客厅'].includes(context?.spaceName)?q+norm(context.spaceName):q;
+ const requested=requestedScopes(contextualQuestion);
+ const knownFor=(scopes,keys=null)=>relevantFacts(p,scopes,keys);
+ const addFacts=facts=>{for(const fact of facts)add(fact.key,TOPICS[fact.key]?.label||fact.key,fact.text);};
  const wholeQuestion=p.rentalMode==='whole'&&/整院|包栋|整栋|几间卧室/.test(q);
- // Exact published Q&A wins over generic room matching, never recorded operating rules.
- if(exactKnowledge&&!wholeQuestion&&!matched.some(([key])=>p.facts[key]?.text?.trim())){
-  addKnowledge(exactKnowledge);
-  return {status:'answered',body:parts.join('\n\n'),sources,knowledgeIds};
+ function resolveRoom(query){
+  const named=p.rooms.filter(r=>query.includes(norm(r.name.split(' · ')[0]))||query.includes(norm(r.type)));
+  return context?.roomId?p.rooms.find(r=>r.id===context.roomId):(named.length===1?named[0]:null);
  }
- if(wholeQuestion)add('whole','整院配置',`${p.name}按整院包栋出租，包含${p.rooms.length}间卧室，不单独出租卧室。${p.wholeCapacity||'整院总入住人数尚未记录，请管家确认。'}床型配置：${p.rooms.map(r=>r.name+'，'+r.beds).join('；')}。`);
- if(roomQuestion&&!wholeQuestion){
-  if(p.profilePending===true&&!p.rooms.length)missing.push('房间配置与面积（房源资料待录入）');
-  else{
-  const named=p.rooms.filter(r=>q.includes(norm(r.name.split(' · ')[0]))||q.includes(norm(r.type)));
-  const room=context?.roomId?p.rooms.find(r=>r.id===context.roomId):(named.length===1?named[0]:null);
+ function addRoomConfiguration(query,whole=false){
+  if(whole){add('whole','整院配置',`${p.name}按整院包栋出租，包含${p.rooms.length}间卧室，不单独出租卧室。${p.wholeCapacity||'整院总入住人数尚未记录，请管家确认。'}床型配置：${p.rooms.map(r=>r.name+'，'+r.beds).join('；')}。`);return;}
+  if(p.profilePending===true&&!p.rooms.length){missing.push('房间配置与面积（房源资料待录入）');return;}
+  const room=resolveRoom(query);
   if(room)add('room:'+room.id,room.name,`${room.name}位于${room.floor}，${room.area}，配置${room.beds}、${room.bath}，${room.capacity}。已记录设施：${room.facilities.join('、')}。`);
   else{needsClarification=true;parts.push('你想了解哪一间房？可以先在「房间设施」选择'+p.rooms.map(r=>r.name).join('、')+'，再带着房间来问我。');}
-  }
  }
- for(const [key,t] of matched){
-  // Explicit Q&A may fill unknown topics; structured operating rules always win.
-  const fact=p.facts[key];
-  if(fact?.text?.trim())add(key,t.label,fact.text);
-  else{
-   const k=exactKnowledge;
-   if(k&&!sources.some(s=>s.key==='knowledge:'+k.id))addKnowledge(k);
-   else if(!k)missing.push(t.label);
+ const finish=(pending=false)=>{
+  if(missing.length)parts.push(`本店资料尚未记录${[...new Set(missing)].join('、')}，我暂时无法确认。可以点击下方「请管家确认」，把问题交给民宿管家。`);
+  return {status:pending||missing.length?'needs_human':needsClarification?'needs_clarification':'answered',body:parts.join('\n\n'),sources,knowledgeIds};
+ };
+ // An exact answer is an indivisible statement. If any part overlaps a
+ // published rule or selected configuration, it must not re-enter via a later
+ // missing-topic fallback. Rental-mode words alone are not configuration.
+ const exactClaims=exactKnowledge?requestedScopes(question+'；'+exactKnowledge.text):new Set();
+ const structuralConflict=exactKnowledge&&configurationQuestion(question+'；'+exactKnowledge.text)&&(resolveRoom(q)||wholeQuestion);
+ const exactAllowed=exactKnowledge&&!knownFor(exactClaims).length&&!structuralConflict;
+ if(exactAllowed){addKnowledge(exactKnowledge);return finish();}
+ if(structuralConflict)for(const scope of ['extra-bed','crib'])if(requested.has(scope))missing.push(scopeLabel(scope));
+ if(guideMatches.length&&!exactKnowledge){
+  const owned=new Set(),guides=guideMatches.filter(pendingGuide);
+  for(const guide of guideMatches){
+   const guideScopes=requestedScopes([guide.question,...guide.aliases].join('；'));
+   for(const scope of guideScopes)owned.add(scope);
+   const guideRequest=intersection(requested,guideScopes);
+   const pending=pendingGuide(guide);
+   // A confirmed answer's own assertions also participate in conflict checks.
+   const claims=pending?guideRequest:new Set([...guideRequest,...requestedScopes(guide.text)]);
+   const facts=knownFor(claims,guide.topics);
+   addFacts(facts);
+   if(!pending&&facts.length){
+    const covered=new Set(facts.flatMap(fact=>[...fact.scopes]));
+    for(const scope of difference(guideRequest,covered))missing.push(scopeLabel(scope));
+    continue;
+   }
+   const advice=precautions(guide.text);
+   const body=facts.length?`${advice?advice+'\n':''}${guide.question}\n其余待确认项：${guide.confirmationChecklist}（以上公开规则已明确的部分除外）。`:guide.text;
+   add('knowledge:'+guide.id,guide.id+(pending?' · 待确认指南':' · 已确认公开答复'),body,guideMetadata(guide));
   }
+  // Exact original questions/aliases own their whole spans. Pattern matches
+  // own only their subjects, so another request in the same clause survives.
+  const remainderScopes=requestedScopes(analysis.remainder),extraScopes=difference(remainderScopes,owned);
+  // A route guide mentioning a room does not own a later room-size question.
+  if(remainderScopes.has('room')&&configurationQuestion(analysis.remainder))extraScopes.add('room');
+  for(const scope of extraScopes){
+   if(scope==='room'){addRoomConfiguration(norm(analysis.remainder),p.rentalMode==='whole'&&configurationQuestion(analysis.remainder));continue;}
+   const facts=knownFor(new Set([scope]));
+   if(facts.length)addFacts(facts);else missing.push(scopeLabel(scope));
+  }
+  for(const clause of analysis.remainder.split(/[，,。.!！?？；;:：\n]|另外|还有|以及|顺便|并且|同时/).filter(part=>part.trim())){
+   if(!requestedScopes(clause).size&&!matchQinghuanGuides(p,clause).length&&/吗|能|可以|怎么|如何|是否|提供|安排|帮/.test(clause))missing.push('“'+clause.trim()+'”');
+  }
+  return finish(guides.length>0);
+ }
+ const roomQuestion=/房间|房型|床|卫浴|浴室|几人|几个人|住几|面积|楼层|几楼/.test(q);
+ if(wholeQuestion)addRoomConfiguration(q,true);
+ if(roomQuestion&&!wholeQuestion)addRoomConfiguration(q);
+ const matched=Object.entries(TOPICS).filter(([key,topic])=>topic.pattern.test(contextualQuestion)||[...requested].some(scope=>scopeKey(scope)===key));
+ for(const [key,topic] of matched){
+  const scopes=new Set([...requested].filter(scope=>scopeKey(scope)===key));
+  const facts=knownFor(scopes,[key]);
+  if(facts.length){
+   addFacts(facts);
+   const covered=new Set(facts.flatMap(fact=>[...fact.scopes]));
+   for(const scope of difference(scopes,covered))missing.push(scopeLabel(scope));
+  }else missing.push(topic.label);
  }
  if(!matched.length&&!roomQuestion&&!wholeQuestion){
-  const k=exactKnowledge;
-  if(k)addKnowledge(k);
-  else if(/^(你好|您好|嗨|hello|hi)$/.test(q))return {status:'answered',body:`你好，我是${p.name}的AI管家。可以问我厨房、停车、入住，或先看看房间。资料里没有的，我会请民宿管家确认。`,sources:[]};
-  else missing.push('这个问题');
+  if(/^(你好|您好|嗨|hello|hi)$/.test(q))return {status:'answered',body:`你好，我是${p.name}的AI管家。可以问我厨房、停车、入住，或先看看房间。资料里没有的，我会请民宿管家确认。`,sources:[]};
+  missing.push('这个问题');
  }
- if(missing.length)parts.push(`本店资料尚未记录${missing.join('、')}，我暂时无法确认。可以点击下方「请管家确认」，把问题交给民宿管家。`);
- return {status:missing.length?'needs_human':needsClarification?'needs_clarification':'answered',body:parts.join('\n\n'),sources,knowledgeIds};
+ return finish();
 }
 
 export function guestThreads(state,sessionId){return Object.values(state.threads).filter(t=>t.owner===sessionId&&t.propertyId===state.propertyId);}

@@ -848,17 +848,296 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			remainder: rest.join("；")
 		};
 	}
-	function matchQinghuanGuides(p, question) {
+	function analyzeQinghuanQuestion(p, question) {
 		const guides = Array.isArray(p?.knowledge) ? p.knowledge.filter((guide) => guide?.kind === "confirmation_guide" && knownIds.has(guide.id)) : [];
-		if (!guides.length || !String(question ?? "").trim()) return [];
+		if (!guides.length || !String(question ?? "").trim()) return {
+			guides: [],
+			remainder: String(question ?? "")
+		};
 		const normalized = normalize(question);
 		const exact = guides.find((guide) => questions(guide).includes(normalized));
-		if (exact) return [exact];
+		if (exact) return {
+			guides: [exact],
+			remainder: ""
+		};
 		const extracted = takeExactSubquestions(guides, String(question).normalize("NFKC").toLowerCase(), normalized);
 		const clauses = extracted.remainder.split(/[，,。.!！?？；;:：\n]|另外|还有|以及|顺便|并且|同时/).map(normalize).filter(Boolean);
 		const result = new Map(extracted.guides.map((guide) => [guide.id, guide]));
 		for (const guide of guides) if (!result.has(guide.id) && clauses.some((clause) => patternMatches(guide, clause))) result.set(guide.id, guide);
-		return [...result.values()];
+		return {
+			guides: [...result.values()],
+			remainder: extracted.remainder
+		};
+	}
+	function matchQinghuanGuides(p, question) {
+		return analyzeQinghuanQuestion(p, question).guides;
+	}
+	//#endregion
+	//#region src/answer-scopes.mjs
+	const definitions = [
+		[
+			"kitchen",
+			"kitchen",
+			"厨房使用规则",
+			/厨房|做饭|煮饭|烹饪|锅具|厨具/
+		],
+		[
+			"parking",
+			"parking",
+			"停车说明",
+			/停车|车位|自驾|停哪|泊车/
+		],
+		[
+			"charging",
+			"parking",
+			"充电设施",
+			/充电|电车/
+		],
+		[
+			"checkin",
+			"checkin",
+			"入住与退房",
+			/入住|退房|几点到|提前到|晚到/
+		],
+		[
+			"location",
+			"location",
+			"位置与交通",
+			/地址|在哪|哪里|位置|怎么去|怎么走|导航|路线|楼栋|门牌|入口|门禁|门锁/
+		],
+		[
+			"pickup",
+			"location",
+			"接机与接站",
+			/接机|接站|机场|高铁站|火车站|大理站/
+		],
+		[
+			"dropoff",
+			"location",
+			"叫车与送站",
+			/送站|送机|叫车|拼车/
+		],
+		[
+			"public-space",
+			"environment",
+			"环境与公共区域",
+			/院子|庭院|环境|客厅|公共区/
+		],
+		[
+			"photos",
+			"environment",
+			"实拍与房源对应",
+			/图片|照片|实拍|照骗|景观/
+		],
+		[
+			"pests",
+			"environment",
+			"防虫与除虫",
+			/蜘蛛|蚊虫|蚊子|虫子|驱蚊|除虫/
+		],
+		[
+			"cleaning",
+			"environment",
+			"卫生与保洁",
+			/卫生|打扫|垃圾|保洁|补扫|清洁/
+		],
+		[
+			"noise",
+			"environment",
+			"隔音与噪音",
+			/隔音|噪音|吵|安静|临街|睡不着/
+		],
+		[
+			"night-safety",
+			"environment",
+			"夜间路线与求助",
+			/路灯|夜间|夜里|晚上|半夜|安全|迷路/
+		],
+		[
+			"network",
+			"wifi",
+			"网络设施",
+			/wifi|wi-fi|无线|网络/i
+		],
+		[
+			"network-fault",
+			"wifi",
+			"网络故障处理",
+			/连不上|连接失败|网速|断网|网络.{0,5}(慢|故障|断)/
+		],
+		[
+			"climate",
+			"wifi",
+			"空调与取暖",
+			/空调|取暖|暖气|制热|制冷/
+		],
+		[
+			"climate-operation",
+			"wifi",
+			"空调取暖的操作方法",
+			/(?:空调|取暖|暖气).{0,12}(?:怎么|如何|操作|使用方法|开关)|遥控器|制热模式|制冷模式/
+		],
+		[
+			"humidity",
+			"wifi",
+			"除湿设施",
+			/除湿|雨季|潮湿|很潮|会.{0,2}潮/
+		],
+		[
+			"utilities",
+			"wifi",
+			"水电故障处理",
+			/停水|停电|漏水|水电|电路|没电|触电/
+		],
+		[
+			"hotwater",
+			"wifi",
+			"热水设施",
+			/热水|淋浴|忽冷忽热/
+		],
+		[
+			"laundry",
+			"wifi",
+			"洗衣设施",
+			/洗衣|衣服.{0,5}洗|怎么洗|如何洗/
+		],
+		[
+			"drying",
+			"wifi",
+			"烘干与晾衣",
+			/烘干|晾衣|衣服.{0,5}干不了/
+		],
+		[
+			"pets",
+			"pets",
+			"宠物规则",
+			/宠物|带(?:小)?狗|带猫|狗狗|猫咪|小狗|两只猫/
+		],
+		[
+			"breakfast",
+			"breakfast",
+			"早餐说明",
+			/早餐|早饭|含早/
+		],
+		[
+			"barbecue",
+			"barbecue",
+			"烧烤规则",
+			/烧烤|烤肉/
+		],
+		[
+			"accessibility",
+			"accessibility",
+			"无障碍与通行",
+			/轮椅|无障碍|楼梯|电梯/
+		],
+		[
+			"invoice",
+			"price",
+			"发票办理",
+			/发票|开票|税号/
+		],
+		[
+			"deposit",
+			"price",
+			"押金退还",
+			/押金|保证金/
+		],
+		[
+			"cancellation",
+			"price",
+			"退改规则",
+			/退改|取消订单|取消预订|退款/
+		],
+		[
+			"discount",
+			"price",
+			"老客与优惠",
+			/老客|复购|回头客|优惠|折扣|升房/
+		],
+		[
+			"damages",
+			"price",
+			"损坏赔偿",
+			/损坏|损耗|赔偿|赔钱|赔付|扣费/
+		],
+		[
+			"booking",
+			"price",
+			"价格与预订",
+			/房价|房费|预订|预定|价格/
+		],
+		[
+			"nearby",
+			"nearby",
+			"周边吃喝玩乐",
+			/周边|附近|餐厅|景点|吃什么|去哪玩|攻略|唐卡/
+		],
+		[
+			"crib",
+			null,
+			"婴儿床",
+			/婴儿床|宝宝床|儿童床/
+		],
+		[
+			"extra-bed",
+			null,
+			"加床服务",
+			/加床|折叠床/
+		]
+	].map(([id, key, label, pattern]) => ({
+		id,
+		key,
+		label,
+		pattern
+	}));
+	const byId = new Map(definitions.map((scope) => [scope.id, scope]));
+	function requestedScopes(text) {
+		const value = String(text ?? "").normalize("NFKC").toLowerCase();
+		const result = definitions.filter((scope) => scope.pattern.test(value)).map((scope) => scope.id);
+		if (result.includes("network-fault") && result.includes("network") && !/密码|凭据|网络名称|有.{0,4}(wifi|无线)/i.test(value)) result.splice(result.indexOf("network"), 1);
+		if (result.includes("climate-operation") && result.includes("climate") && !/有(?:没有|无)?.{0,3}(?:空调|取暖|暖气)|配有/.test(value)) result.splice(result.indexOf("climate"), 1);
+		const roomText = value.replace(/婴儿床|宝宝床|儿童床|加床|折叠床|宠物.{0,3}上床/g, "");
+		if (/房间|房型|床|卫浴|浴室|几人|几个人|住几|面积|楼层|几楼|卧室/.test(roomText)) result.push("room");
+		return new Set(result);
+	}
+	const scopeLabel = (id) => byId.get(id)?.label || (id === "room" ? "房间配置与面积" : "这个问题");
+	const scopeKey = (id) => byId.get(id)?.key ?? null;
+	function factScopes(key, text) {
+		const scopes = new Set([...requestedScopes(text)].filter((id) => scopeKey(id) === key));
+		if (scopes.has("climate-operation")) scopes.add("climate");
+		if (scopes.has("network-fault")) scopes.add("network");
+		const defaults = {
+			kitchen: "kitchen",
+			parking: "parking",
+			checkin: "checkin",
+			location: "location",
+			pets: "pets",
+			breakfast: "breakfast",
+			barbecue: "barbecue",
+			accessibility: "accessibility",
+			nearby: "nearby"
+		};
+		if (!scopes.size && defaults[key]) scopes.add(defaults[key]);
+		return scopes;
+	}
+	const intersection = (a, b) => new Set([...a].filter((value) => b.has(value)));
+	const difference = (a, b) => new Set([...a].filter((value) => !b.has(value)));
+	function relevantFacts(p, scopes, keys = null) {
+		return Object.entries(p.facts).filter(([key, fact]) => fact?.text?.trim() && (!keys || keys.includes(key))).map(([key, fact]) => ({
+			key,
+			text: fact.text,
+			scopes: factScopes(key, fact.text)
+		})).filter((fact) => intersection(fact.scopes, scopes).size);
+	}
+	function configurationQuestion(question) {
+		const text = String(question);
+		if (/(?:原有|既有|现有|原本).{0,12}(?:\d+(?:\.\d+)?米|双床|大床|单人床|床型)/.test(text)) return true;
+		const value = text.split(/[。！？?!，,；;\n]/).filter((clause) => !/婴儿床|宝宝床|儿童床|加床|折叠床|宠物.{0,3}上床/.test(clause)).join("；");
+		return /床.{0,4}(多大|多宽|宽度|尺寸|几米|多少米)|几张床|床型|床宽|双床|大床|单人床|\d+(?:\.\d+)?米|几间卧室|多少.{0,2}卧室|几人|几个人|住几|人数|面积|楼层|几楼|卫浴|单独出租|按间出租|分开租/.test(value);
+	}
+	function precautions(text) {
+		return (String(text).match(/[^。！？?!]+[。！？?!]?/g) || []).filter((sentence) => /远离危险|不要自行拆修|紧急救援|不徒手接触|先停止使用|先到明亮/.test(sentence)).join("");
 	}
 	//#endregion
 	//#region src/model.mjs
@@ -989,7 +1268,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		};
 	}
 	function answer(state, question, context = null) {
-		const p = state.published, q = norm(question), sources = [], parts = [];
+		const p = state.published, q = norm(question), sources = [], parts = [], missing = [];
+		let needsClarification = false;
 		if (!state.visible) return {
 			status: "unavailable",
 			body: "本民宿资料暂时停止展示，请联系管家。",
@@ -1001,6 +1281,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			sources: []
 		};
 		const add = (key, label, text, metadata = {}) => {
+			if (sources.some((source) => source.key === key)) return;
 			sources.push({
 				key,
 				label,
@@ -1017,93 +1298,112 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			sourceRange: k.sourceRange
 		});
 		const addKnowledge = (k) => add("knowledge:" + k.id, k.question, k.text, k.kind === "confirmation_guide" ? guideMetadata(k) : {});
-		const roomQuestion = /房间|房型|床|卫浴|浴室|几人|几个人|住几|面积|楼层|几楼/.test(q);
+		const pendingGuide = (k) => k.kind === "confirmation_guide" && k.requiresHuman !== false;
+		const analysis = analyzeQinghuanQuestion(p, question), guideMatches = analysis.guides, knowledgeIds = guideMatches.map((guide) => guide.id);
+		const exactKnowledge = p.knowledge.find((k) => !pendingGuide(k) && [k.question, ...k.aliases].some((a) => norm(a) === q));
 		const contextualQuestion = /开放|时间|几点|这里|这个空间/.test(q) && [
 			"独立庭院",
 			"共享厨房",
 			"共享客厅"
 		].includes(context?.spaceName) ? q + norm(context.spaceName) : q;
-		const matched = Object.entries(TOPICS).filter(([, t]) => t.pattern.test(contextualQuestion));
-		const guideMatches = matchQinghuanGuides(p, question), knowledgeIds = guideMatches.map((guide) => guide.id);
-		const pendingGuide = (k) => k.kind === "confirmation_guide" && k.requiresHuman !== false;
-		const exactKnowledge = p.knowledge.find((k) => !pendingGuide(k) && [k.question, ...k.aliases].some((a) => norm(a) === q));
-		const guides = guideMatches.filter(pendingGuide);
-		if (guideMatches.length && !exactKnowledge) {
-			const covered = new Set(guideMatches.flatMap((guide) => guide.topics ?? [])), extraMissing = [];
-			let extraQuestion = q;
-			const guidePhrases = guideMatches.flatMap((guide) => [guide.question, ...guide.aliases]).map(norm).filter(Boolean).sort((a, b) => b.length - a.length);
-			for (const phrase of guidePhrases) extraQuestion = extraQuestion.replaceAll(phrase, "");
-			const extraMatched = Object.entries(TOPICS).filter(([, topic]) => topic.pattern.test(extraQuestion));
-			for (const guide of guideMatches) {
-				const pending = pendingGuide(guide);
-				const known = (guide.topics ?? []).filter((key) => p.facts[key]?.text?.trim());
-				for (const key of known) if (!sources.some((source) => source.key === key)) add(key, TOPICS[key]?.label || key, p.facts[key].text);
-				if (!pending && known.length) continue;
-				const body = known.length ? `${guide.question}\n其余待确认项：${guide.confirmationChecklist}（以上公开规则已明确的部分除外）。` : guide.text;
-				add("knowledge:" + guide.id, guide.id + (pending ? " · 待确认指南" : " · 已确认公开答复"), body, guideMetadata(guide));
-			}
-			for (const [key, topic] of extraMatched) {
-				const fact = p.facts[key];
-				if (fact?.text?.trim()) {
-					if (!sources.some((source) => source.key === key)) add(key, topic.label, fact.text);
-				} else if (!covered.has(key)) extraMissing.push(topic.label);
-			}
-			if (extraMissing.length) parts.push(`本店资料尚未记录${extraMissing.join("、")}，我暂时无法确认。可以点击下方「请管家确认」，把问题交给民宿管家。`);
-			return {
-				status: guides.length || extraMissing.length ? "needs_human" : "answered",
-				body: parts.join("\n\n"),
-				sources,
-				knowledgeIds
-			};
-		}
-		let needsClarification = false, missing = [];
+		const requested = requestedScopes(contextualQuestion);
+		const knownFor = (scopes, keys = null) => relevantFacts(p, scopes, keys);
+		const addFacts = (facts) => {
+			for (const fact of facts) add(fact.key, TOPICS[fact.key]?.label || fact.key, fact.text);
+		};
 		const wholeQuestion = p.rentalMode === "whole" && /整院|包栋|整栋|几间卧室/.test(q);
-		if (exactKnowledge && !wholeQuestion && !matched.some(([key]) => p.facts[key]?.text?.trim())) {
-			addKnowledge(exactKnowledge);
-			return {
-				status: "answered",
-				body: parts.join("\n\n"),
-				sources,
-				knowledgeIds
-			};
+		function resolveRoom(query) {
+			const named = p.rooms.filter((r) => query.includes(norm(r.name.split(" · ")[0])) || query.includes(norm(r.type)));
+			return context?.roomId ? p.rooms.find((r) => r.id === context.roomId) : named.length === 1 ? named[0] : null;
 		}
-		if (wholeQuestion) add("whole", "整院配置", `${p.name}按整院包栋出租，包含${p.rooms.length}间卧室，不单独出租卧室。${p.wholeCapacity || "整院总入住人数尚未记录，请管家确认。"}床型配置：${p.rooms.map((r) => r.name + "，" + r.beds).join("；")}。`);
-		if (roomQuestion && !wholeQuestion) if (p.profilePending === true && !p.rooms.length) missing.push("房间配置与面积（房源资料待录入）");
-		else {
-			const named = p.rooms.filter((r) => q.includes(norm(r.name.split(" · ")[0])) || q.includes(norm(r.type)));
-			const room = context?.roomId ? p.rooms.find((r) => r.id === context.roomId) : named.length === 1 ? named[0] : null;
+		function addRoomConfiguration(query, whole = false) {
+			if (whole) {
+				add("whole", "整院配置", `${p.name}按整院包栋出租，包含${p.rooms.length}间卧室，不单独出租卧室。${p.wholeCapacity || "整院总入住人数尚未记录，请管家确认。"}床型配置：${p.rooms.map((r) => r.name + "，" + r.beds).join("；")}。`);
+				return;
+			}
+			if (p.profilePending === true && !p.rooms.length) {
+				missing.push("房间配置与面积（房源资料待录入）");
+				return;
+			}
+			const room = resolveRoom(query);
 			if (room) add("room:" + room.id, room.name, `${room.name}位于${room.floor}，${room.area}，配置${room.beds}、${room.bath}，${room.capacity}。已记录设施：${room.facilities.join("、")}。`);
 			else {
 				needsClarification = true;
 				parts.push("你想了解哪一间房？可以先在「房间设施」选择" + p.rooms.map((r) => r.name).join("、") + "，再带着房间来问我。");
 			}
 		}
-		for (const [key, t] of matched) {
-			const fact = p.facts[key];
-			if (fact?.text?.trim()) add(key, t.label, fact.text);
-			else {
-				const k = exactKnowledge;
-				if (k && !sources.some((s) => s.key === "knowledge:" + k.id)) addKnowledge(k);
-				else if (!k) missing.push(t.label);
+		const finish = (pending = false) => {
+			if (missing.length) parts.push(`本店资料尚未记录${[...new Set(missing)].join("、")}，我暂时无法确认。可以点击下方「请管家确认」，把问题交给民宿管家。`);
+			return {
+				status: pending || missing.length ? "needs_human" : needsClarification ? "needs_clarification" : "answered",
+				body: parts.join("\n\n"),
+				sources,
+				knowledgeIds
+			};
+		};
+		const exactClaims = exactKnowledge ? requestedScopes(question + "；" + exactKnowledge.text) : /* @__PURE__ */ new Set();
+		const structuralConflict = exactKnowledge && configurationQuestion(question + "；" + exactKnowledge.text) && (resolveRoom(q) || wholeQuestion);
+		if (exactKnowledge && !knownFor(exactClaims).length && !structuralConflict) {
+			addKnowledge(exactKnowledge);
+			return finish();
+		}
+		if (structuralConflict) {
+			for (const scope of ["extra-bed", "crib"]) if (requested.has(scope)) missing.push(scopeLabel(scope));
+		}
+		if (guideMatches.length && !exactKnowledge) {
+			const owned = /* @__PURE__ */ new Set(), guides = guideMatches.filter(pendingGuide);
+			for (const guide of guideMatches) {
+				const guideScopes = requestedScopes([guide.question, ...guide.aliases].join("；"));
+				for (const scope of guideScopes) owned.add(scope);
+				const guideRequest = intersection(requested, guideScopes);
+				const pending = pendingGuide(guide);
+				const facts = knownFor(pending ? guideRequest : /* @__PURE__ */ new Set([...guideRequest, ...requestedScopes(guide.text)]), guide.topics);
+				addFacts(facts);
+				if (!pending && facts.length) {
+					const covered = new Set(facts.flatMap((fact) => [...fact.scopes]));
+					for (const scope of difference(guideRequest, covered)) missing.push(scopeLabel(scope));
+					continue;
+				}
+				const advice = precautions(guide.text);
+				const body = facts.length ? `${advice ? advice + "\n" : ""}${guide.question}\n其余待确认项：${guide.confirmationChecklist}（以上公开规则已明确的部分除外）。` : guide.text;
+				add("knowledge:" + guide.id, guide.id + (pending ? " · 待确认指南" : " · 已确认公开答复"), body, guideMetadata(guide));
 			}
+			const remainderScopes = requestedScopes(analysis.remainder), extraScopes = difference(remainderScopes, owned);
+			if (remainderScopes.has("room") && configurationQuestion(analysis.remainder)) extraScopes.add("room");
+			for (const scope of extraScopes) {
+				if (scope === "room") {
+					addRoomConfiguration(norm(analysis.remainder), p.rentalMode === "whole" && configurationQuestion(analysis.remainder));
+					continue;
+				}
+				const facts = knownFor(/* @__PURE__ */ new Set([scope]));
+				if (facts.length) addFacts(facts);
+				else missing.push(scopeLabel(scope));
+			}
+			for (const clause of analysis.remainder.split(/[，,。.!！?？；;:：\n]|另外|还有|以及|顺便|并且|同时/).filter((part) => part.trim())) if (!requestedScopes(clause).size && !matchQinghuanGuides(p, clause).length && /吗|能|可以|怎么|如何|是否|提供|安排|帮/.test(clause)) missing.push("“" + clause.trim() + "”");
+			return finish(guides.length > 0);
+		}
+		const roomQuestion = /房间|房型|床|卫浴|浴室|几人|几个人|住几|面积|楼层|几楼/.test(q);
+		if (wholeQuestion) addRoomConfiguration(q, true);
+		if (roomQuestion && !wholeQuestion) addRoomConfiguration(q);
+		const matched = Object.entries(TOPICS).filter(([key, topic]) => topic.pattern.test(contextualQuestion) || [...requested].some((scope) => scopeKey(scope) === key));
+		for (const [key, topic] of matched) {
+			const scopes = new Set([...requested].filter((scope) => scopeKey(scope) === key));
+			const facts = knownFor(scopes, [key]);
+			if (facts.length) {
+				addFacts(facts);
+				const covered = new Set(facts.flatMap((fact) => [...fact.scopes]));
+				for (const scope of difference(scopes, covered)) missing.push(scopeLabel(scope));
+			} else missing.push(topic.label);
 		}
 		if (!matched.length && !roomQuestion && !wholeQuestion) {
-			const k = exactKnowledge;
-			if (k) addKnowledge(k);
-			else if (/^(你好|您好|嗨|hello|hi)$/.test(q)) return {
+			if (/^(你好|您好|嗨|hello|hi)$/.test(q)) return {
 				status: "answered",
 				body: `你好，我是${p.name}的AI管家。可以问我厨房、停车、入住，或先看看房间。资料里没有的，我会请民宿管家确认。`,
 				sources: []
 			};
-			else missing.push("这个问题");
+			missing.push("这个问题");
 		}
-		if (missing.length) parts.push(`本店资料尚未记录${missing.join("、")}，我暂时无法确认。可以点击下方「请管家确认」，把问题交给民宿管家。`);
-		return {
-			status: missing.length ? "needs_human" : needsClarification ? "needs_clarification" : "answered",
-			body: parts.join("\n\n"),
-			sources,
-			knowledgeIds
-		};
+		return finish();
 	}
 	function guestThreads(state, sessionId) {
 		return Object.values(state.threads).filter((t) => t.owner === sessionId && t.propertyId === state.propertyId);
@@ -2409,7 +2709,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		lastRoute = location.hash;
 		document.body.classList.toggle("customer-preview", customerPreview);
 		document.body.classList.toggle("mobile-presentation", mobilePresentation());
-		$("#app").innerHTML = `<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTciIGZpbGw9IiMyNDRmNDAiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmNmY2ZWUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTMgMzEgMzIgMTVsMTkgMTZNMTkgMjh2MjJoMjZWMjhNMjggNTBWMzZoOHYxNCIvPjxwYXRoIGQ9Ik00MiAxNnY3Ii8+PC9nPjwvc3ZnPgo=" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.4.1</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon("house")} 小程序风格演示 <strong>· ${r === "guest" ? "客人端" : r === "merchant" ? "商家端" : "平台端"}</strong></span><span>${mobileOpen ? "收起讲解" : "演示控制"} ${icon(mobileOpen ? "close" : "more")}</span></button><main class="workspace">${mobilePresentation() ? "" : narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${esc(state.published.name)} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon("signal")}${icon("wifi")}${icon("battery")}</span></div><header class="mini-header"><div class="mini-title">${info.back ? `<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon("back")}</button>` : ""}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation() && !customerPreview ? "演示入口与说明" : "小程序演示说明"}">${icon("more")}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError ? `<div class="error-banner">${esc(storageError)}</div>` : ""}${localChat ? lifeChat(workspace.life, currentCity(), lifeMessages()) : chat ? renderChat() : `<div class="phone-body ${p === "vr" && r === "guest" ? "vr-body" : ""}" id="phone-scroll">${content()}</div>`}${noTabs ? "" : tabbar()}${localChat ? lifeComposer(lifeDraft) : chat ? composerView() : r === "merchant" && p === "editor" ? editorActions() : ""}${r === "guest" && ["room", "space"].includes(p) ? detailActions() : ""}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
+		$("#app").innerHTML = `<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTciIGZpbGw9IiMyNDRmNDAiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmNmY2ZWUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTMgMzEgMzIgMTVsMTkgMTZNMTkgMjh2MjJoMjZWMjhNMjggNTBWMzZoOHYxNCIvPjxwYXRoIGQ9Ik00MiAxNnY3Ii8+PC9nPjwvc3ZnPgo=" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.4.2</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon("house")} 小程序风格演示 <strong>· ${r === "guest" ? "客人端" : r === "merchant" ? "商家端" : "平台端"}</strong></span><span>${mobileOpen ? "收起讲解" : "演示控制"} ${icon(mobileOpen ? "close" : "more")}</span></button><main class="workspace">${mobilePresentation() ? "" : narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${esc(state.published.name)} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon("signal")}${icon("wifi")}${icon("battery")}</span></div><header class="mini-header"><div class="mini-title">${info.back ? `<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon("back")}</button>` : ""}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation() && !customerPreview ? "演示入口与说明" : "小程序演示说明"}">${icon("more")}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError ? `<div class="error-banner">${esc(storageError)}</div>` : ""}${localChat ? lifeChat(workspace.life, currentCity(), lifeMessages()) : chat ? renderChat() : `<div class="phone-body ${p === "vr" && r === "guest" ? "vr-body" : ""}" id="phone-scroll">${content()}</div>`}${noTabs ? "" : tabbar()}${localChat ? lifeComposer(lifeDraft) : chat ? composerView() : r === "merchant" && p === "editor" ? editorActions() : ""}${r === "guest" && ["room", "space"].includes(p) ? detailActions() : ""}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
 		if (chat || localChat) {
 			const c = $(".chat-scroll");
 			if (c) c.scrollTop = c.scrollHeight;

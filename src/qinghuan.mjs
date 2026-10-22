@@ -52,13 +52,13 @@ function takeExactSubquestions(guides, raw, normalized) {
   return {guides: spans.map(span => span.guide), remainder: rest.join('；')};
 }
 
-export function matchQinghuanGuides(p, question) {
+export function analyzeQinghuanQuestion(p, question) {
   const guides = Array.isArray(p?.knowledge) ? p.knowledge.filter(guide =>
     guide?.kind === 'confirmation_guide' && knownIds.has(guide.id)) : [];
-  if (!guides.length || !String(question ?? '').trim()) return [];
+  if (!guides.length || !String(question ?? '').trim()) return {guides: [], remainder: String(question ?? '')};
   const normalized = normalize(question);
   const exact = guides.find(guide => questions(guide).includes(normalized));
-  if (exact) return [exact];
+  if (exact) return {guides: [exact], remainder: ''};
 
   const raw = String(question).normalize('NFKC').toLowerCase();
   const extracted = takeExactSubquestions(guides, raw, normalized);
@@ -68,5 +68,9 @@ export function matchQinghuanGuides(p, question) {
   for (const guide of guides) {
     if (!result.has(guide.id) && clauses.some(clause => patternMatches(guide, clause))) result.set(guide.id, guide);
   }
-  return [...result.values()];
+  return {guides: [...result.values()], remainder: extracted.remainder};
+}
+
+export function matchQinghuanGuides(p, question) {
+  return analyzeQinghuanQuestion(p, question).guides;
 }
