@@ -115,6 +115,22 @@ body.mobile-presentation{background:#e9eee7;font-size:15px;overflow:hidden;-webk
 .demo-entry-switch button:hover{background:#e7eddf}
 .demo-entry-switch button[aria-pressed="true"]{background:var(--green);color:#fff}
 .demo-entry-switch button:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+
+.amenities button.amenity{background:transparent;min-width:0;padding:4px;min-height:48px}
+.property-pending{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:14px;padding:12px 0;border-top:1px solid var(--line);font-size:14px;color:var(--green)}
+.queue-scope{margin:0 0 16px;line-height:1.8}
+.preserve-lines{white-space:pre-wrap;overflow-wrap:anywhere}
+.conversation-preview .reply-ai{margin:14px 0;padding:14px;background:var(--ground)}
+.conversation-preview .reply-ai,.conversation-preview .reply-ai strong{font-size:16px;line-height:1.85}
+.conversation-preview .small{font-size:14px}
+.guide-confirm span{display:flex;align-items:center;gap:10px}
+.guide-confirm input[type="checkbox"]{width:20px;min-height:20px;flex:none;accent-color:var(--green)}
+.chat-info>span{flex:1;min-width:0}
+.chat-info .text-btn{flex:none;min-height:36px;font-size:13px}
+.question-library{margin-top:18px}
+.question-library .fact-row{font-size:15px;line-height:1.7;gap:12px}
+.question-library .fact-row span{flex:1}
+.mobile-presentation .amenities button.amenity{font-size:14px}
 </style>
  
 </head>
@@ -135,7 +151,718 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 }
 
 (function() {
-	//#region ../团队在线演示-v0.4/dist/src/model.mjs
+	//#endregion
+	//#region src/qinghuan.mjs
+	const QINGHUAN_QUESTIONS = [
+		{
+			"id": "Q01",
+			"question": "从机场/高铁站怎么到院子？能安排接站吗？",
+			"aliases": [
+				"机场过来怎么走，能接机吗？",
+				"大理站怎么到清欢？",
+				"我们四个人今晚到，接站要多少钱？"
+			],
+			"text": "您从机场还是高铁站过来，哪天到、几位同行、行李多少？清欢的准确导航点、交通参考车程和接站服务、费用、时段仍待商家确认。请先通过订单平台已有的商家联系入口核对定位与接站安排；我可以帮您整理需求，当前没有接站订单或安排确认。",
+			"topics": ["location", "price"],
+			"intentPatterns": [{
+				"anyOf": ["接机|接站|机场接送", "机场|高铁站|火车站|大理站"],
+				"allOf": ["到|接|路线|交通|怎么|多少钱|安排"]
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q01",
+			"sourceRange": "30问总表!A4:O4",
+			"confirmationChecklist": "机场/车站与本店的准确定位、推荐交通、参考车程及有效日期；是否提供接站、费用口径、预约与承接人、服务时段。"
+		},
+		{
+			"id": "Q02",
+			"question": "小区楼栋多、路复杂，到了怎么找到房间？",
+			"aliases": [
+				"到小区门口了，房间怎么找？",
+				"晚上回来找不到楼栋怎么办？",
+				"导航到了但不知道从哪个入口进"
+			],
+			"text": "您现在在哪个入口或地标，预订的是哪个出租单元？清欢对应单元的入口、楼栋门牌和日夜路书仍待商家确认，先不要按示例房号寻找。请用订单平台的商家联系入口核对到房路线；门禁、门锁凭据仅通过商家核验入住身份后的受控渠道获取。",
+			"topics": ["location", "checkin"],
+			"intentPatterns": [{
+				"anyOf": ["找房|找(?:到|不着|不到).{0,5}(?:房|楼栋|门口)|楼栋|门牌|小区(?:入口|门口)|哪个入口|门锁密码|门禁(?:码|密码)", "导航到了"],
+				"allOf": []
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q02",
+			"sourceRange": "30问总表!A5:O5",
+			"confirmationChecklist": "本店/出租单元对应的小区入口、楼栋/门牌、白天和夜间路书、可用导航点、门禁获取方式及迷路联系入口。"
+		},
+		{
+			"id": "Q03",
+			"question": "自驾好停车吗？收费吗？有充电桩吗？",
+			"aliases": [
+				"开车过去停车免费吗？",
+				"有电车充电的地方吗，车位要预约吗？",
+				"车位满了能帮忙停吗？"
+			],
+			"text": "停车和充电要分别确认：清欢可使用的停车位置、收费条件、入场规则及是否代客泊车尚待商家确认；是否有可用充电桩、位置、收费和预约方式也未确认。您是油车还是电车、预计何时到？请商家核实当日可用情况，当前不能保证车位或充电名额。",
+			"topics": ["parking", "price"],
+			"intentPatterns": [{
+				"anyOf": ["停车|车位|停哪|充电桩|电车充电|代客泊车"],
+				"allOf": []
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q03",
+			"sourceRange": "30问总表!A6:O6",
+			"confirmationChecklist": "本店可使用的停车场、收费/免费适用范围、入场规则、是否代客泊车；充电设施是否真实存在、位置及预约方式。"
+		},
+		{
+			"id": "Q04",
+			"question": "能提前入住或延迟退房吗？",
+			"aliases": [
+				"上午十点到能先入住吗？",
+				"能不能晚两个小时退房？",
+				"提前到可以先寄存行李吗？"
+			],
+			"text": "清欢的标准入住、退房时间，以及提前入住、延迟退房的条件和费用仍待商家确认。请提供入住日期、出租单元和希望到店或离店的时间，由商家结合当日房态与保洁安排答复；行李是否可寄存、如何收费也需要核实。目前只是需求咨询，尚未获准早入或晚退。",
+			"topics": ["checkin", "price"],
+			"intentPatterns": [{
+				"anyOf": ["提前入住|早入住|提前到|早到|延迟退房|晚退|晚.{0,5}退房|寄存行李|行李寄存", "上午.{0,6}到.{0,5}(?:先|早|提前)入住|先入住"],
+				"allOf": [],
+				"noneOf": ["收费|收钱|费用|多少钱|宽限|超时|延到下午|下午退房"]
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q04",
+			"sourceRange": "30问总表!A7:O7",
+			"confirmationChecklist": "本店标准入住/退房时刻、早到/晚退条件与费用、行李寄存规则、房态及保洁的实际确认渠道。"
+		},
+		{
+			"id": "Q05",
+			"question": "除房费外还有押金、清洁费吗？退改规则是什么？",
+			"aliases": [
+				"除了房费还有什么钱？",
+				"押金清洁费另外收吗？",
+				"这单现在取消能退多少？"
+			],
+			"text": "清欢是否另收押金、清洁费、超时费及适用条件还未确认，不能把未知金额当作零。退改需要按您的预订渠道、订单日期和订单条款核对。请在订单平台查看已展示的费用与退改条款，并通过该订单联系商家确认个案；我无法据此判定本单可退金额或执行退款。",
+			"topics": ["price"],
+			"intentPatterns": [{
+				"anyOf": [
+					"退改|取消订单|取消预订|退款规则",
+					"除(?:了)?房费|额外费用|押金.{0,5}清洁费",
+					"(?:这单|订单|预订).{0,8}(?:取消|能退)|取消.{0,5}(?:能退|退多少)"
+				],
+				"allOf": []
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q05",
+			"sourceRange": "30问总表!A8:O8",
+			"confirmationChecklist": "房费之外实际存在的押金、清洁费、超时费、收费条件；订单渠道对应的退改条款、退款路径与时效。"
+		},
+		{
+			"id": "Q06",
+			"question": "能带宠物吗？有什么要求？",
+			"aliases": [
+				"可以带小狗住吗？",
+				"两只猫能一起带吗，要押金吗？",
+				"宠物有什么限制？"
+			],
+			"text": "清欢是否接待宠物尚待商家确认，适用出租单元、品种体型、数量限制、押金或清洁费及行为要求也未确认。请告诉商家宠物种类、体型、数量和入住日期，获得明确答复后再安排携宠入住；当前不能默认可以携带或承诺提供宠物用品。",
+			"topics": ["pets", "price"],
+			"intentPatterns": [{
+				"anyOf": ["宠物|带(?:小)?狗|带猫|狗狗|猫咪|两只猫"],
+				"allOf": []
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q06",
+			"sourceRange": "30问总表!A9:O9",
+			"confirmationChecklist": "清欢是否接待宠物、允许的品种/体型/数量、适用房源、押金/清洁费、行为要求及需提前确认的条件。"
+		},
+		{
+			"id": "Q07",
+			"question": "含早餐吗？可以自己做饭吗？",
+			"aliases": [
+				"房费包早餐吗？",
+				"能借厨房自己煮饭吗？",
+				"早上在哪里吃，做完饭要自己收拾吗？"
+			],
+			"text": "早餐权益和厨房使用需分开核实。清欢是否含早、适用订单、供应地点、时段和价格尚待确认；本店厨房是否可用、用品、预约和清洁要求也未确认。周边有餐饮推荐并不代表房费含早餐。您更需要查早餐还是厨房，或两项都查？具体请通过订单平台向商家确认。",
+			"topics": ["breakfast", "kitchen"],
+			"intentPatterns": [{
+				"anyOf": ["早餐|早饭|含早", "自己(?:做饭|煮饭)|厨房.{0,8}(?:使用|可以用|能用|做饭)|早上.{0,8}(?:吃|哪里吃)|做完饭|做饭.{0,6}(?:收拾|清理)"],
+				"allOf": []
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q07",
+			"sourceRange": "30问总表!A10:O10",
+			"confirmationChecklist": "是否含早及适用订单、早餐供应者/地点/时段/价格；本店厨房是否可用、设施用品、预约与清洁责任。"
+		},
+		{
+			"id": "Q08",
+			"question": "房间图片和实际一致吗？会不会照骗？",
+			"aliases": [
+				"照片是我订的这一间吗？",
+				"实际景观会不会和图片不一样？",
+				"住进来和照片不符，能换房吗？"
+			],
+			"text": "需要先核对您预订的出租单元与对应实拍或VR。清欢各单元素材对应关系、拍摄日期、床型面积、景观楼层及已知限制仍待确认，参考VR不能替代真实房源说明。若您已入住并发现不符，请保留具体差异并联系订单商家核实；是否可换房及条件需另行确认。",
+			"topics": ["environment"],
+			"intentPatterns": [{
+				"anyOf": ["照骗|实拍|图片和实际|照片.{0,10}(?:一致|不符|实际|订的)", "景观.{0,8}图片"],
+				"allOf": []
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q08",
+			"sourceRange": "30问总表!A11:O11",
+			"confirmationChecklist": "每个房型/出租单元的实际图文/VR对应关系、拍摄日期、景观与楼层、已知短板；是否有换房政策及执行条件。"
+		},
+		{
+			"id": "Q09",
+			"question": "有空调/取暖吗？雨季潮不潮、冬天冷不冷？",
+			"aliases": [
+				"冬天房里有暖气吗？",
+				"雨季会很潮吗，有除湿机吗？",
+				"空调和取暖器怎么开？"
+			],
+			"text": "请先确认您询问的出租单元。清欢各房实际空调、取暖和除湿设备、使用方法、季节性情况及可借用品尚待商家确认。当地气候参考不能代替这间房的设备情况；设备型号与说明未核实前，我不能给出具体开关步骤或保证不冷不潮。",
+			"topics": ["wifi", "environment"],
+			"intentPatterns": [{
+				"anyOf": ["空调|取暖|暖气|除湿机|雨季.{0,5}潮|冬天.{0,5}冷"],
+				"allOf": []
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q09",
+			"sourceRange": "30问总表!A12:O12",
+			"confirmationChecklist": "各出租单元实际空调、取暖/除湿设备及使用方法；楼层季节性情况、可借物品与服务时段。"
+		},
+		{
+			"id": "Q10",
+			"question": "能开发票吗？怎么开？",
+			"aliases": [
+				"住宿能开公司发票吗？",
+				"报销发票在哪里申请？",
+				"开票要填什么信息？"
+			],
+			"text": "清欢能否开票、开票主体、项目金额、渠道限制和办理时效仍待确认。请通过订单平台已有的开票或商家联系入口核实，再按正式表单提供必要的抬头、税号和接收方式；这些个人或公司信息不应写入公开问答。当前没有开票申请完成或发票已开具的确认。",
+			"topics": ["price"],
+			"intentPatterns": [{
+				"anyOf": ["能.{0,3}开.{0,3}发票|开票申请|报销发票|公司发票|开票要填|在哪里申请"],
+				"allOf": ["发票|开票|税号"],
+				"noneOf": ["开错|错了|抬头错|没收到|没有收到|还没到|进度|重开|多久"]
+			}],
+			"phase": "入住前",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q10",
+			"sourceRange": "30问总表!A13:O13",
+			"confirmationChecklist": "本店是否可开及由谁开、可开项目/金额、申请信息、申请入口、渠道限制与承诺时效。"
+		},
+		{
+			"id": "Q11",
+			"question": "突然停水停电怎么办？找谁？多久能修？",
+			"aliases": [
+				"突然没电了，找谁处理？",
+				"房间停水，多久恢复？",
+				"漏水了还能用电吗？"
+			],
+			"text": "您现在是停水、停电还是漏水，具体在哪个出租单元？若有冒烟、火情、触电风险或水接近电器，请先远离危险处，不要自行拆修，必要时联系当地紧急救援。清欢的当班、维修或物业渠道、替代安排和恢复时间仍待商家确认，请优先使用订单平台的现有联系入口；当前不能确认已报修、维修到场或恢复时刻。",
+			"topics": ["wifi"],
+			"intentPatterns": [{
+				"anyOf": ["停水|停电|漏水|水电故障|电路故障|突然.{0,4}没电"],
+				"allOf": []
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q11",
+			"sourceRange": "30问总表!A14:O14",
+			"confirmationChecklist": "停水/停电/漏水的实际应急流程、当班/维修/物业渠道、可提供的替代安排、通知方式与补偿授权。"
+		},
+		{
+			"id": "Q12",
+			"question": "热水出水慢、忽冷忽热怎么解决？",
+			"aliases": [
+				"淋浴一直不热怎么办？",
+				"热水一会冷一会热",
+				"热水器要等多久才有热水？"
+			],
+			"text": "您在哪个出租单元，问题是一直不热、出热水慢还是忽冷忽热？清欢本房热水设备类型、开关、等待时间和温度提示还待确认，暂不能给出设备专属操作。请通过订单平台联系商家核对说明或报修；如果持续异常，先停止使用，不能据当前问答认定已经派出维修或完成热水改造。",
+			"topics": ["wifi"],
+			"intentPatterns": [{
+				"anyOf": ["热水|忽冷忽热|淋浴.{0,4}不热|热水器"],
+				"allOf": []
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q12",
+			"sourceRange": "30问总表!A15:O15",
+			"confirmationChecklist": "本房热水设备类型、开关及等待/温度提示、可用说明图、故障判断、报修渠道和实际响应规则。"
+		},
+		{
+			"id": "Q13",
+			"question": "WiFi连不上/网速慢怎么办？",
+			"aliases": [
+				"房间无线网密码在哪看？",
+				"Wi-Fi连接不上怎么办？",
+				"二楼网速太慢了，怎么处理？"
+			],
+			"text": "您在哪个出租单元，是找不到网络、连接失败还是连接后网速慢？清欢各单元网络名称、可用排查步骤和故障联系人仍待确认。WiFi凭据不会显示在公开问答中，请通过商家核验住客身份后的受控渠道获取；未核实设备前不建议重置路由器。网速与修复进度需现场核查，我不能承诺速度或声称已修好。",
+			"topics": ["wifi"],
+			"intentPatterns": [{
+				"anyOf": ["wifi|wi[ -]?fi|无线网|网速|连不上网|网络.{0,5}(?:慢|断|连)"],
+				"allOf": []
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q13",
+			"sourceRange": "30问总表!A16:O16",
+			"confirmationChecklist": "各单元网络覆盖、设备可执行的排查步骤、故障联系人；WiFi凭据的授权获取入口及可见范围。"
+		},
+		{
+			"id": "Q14",
+			"question": "房间有蜘蛛、蚊虫怎么办？",
+			"aliases": [
+				"床上发现蜘蛛怎么办？",
+				"房间蚊子好多，有驱蚊的东西吗？",
+				"能不能帮忙除虫或换房？"
+			],
+			"text": "看到蜘蛛或蚊虫确实会影响入住，请先避开、不徒手接触。清欢现有防虫用品、放置位置、保洁除虫安排以及换房或补偿条件仍待商家确认，请通过订单平台联系商家并说明所在单元和发现位置。我可以帮您整理情况，但没有除虫、换房或物资送达的确认。",
+			"topics": ["environment"],
+			"intentPatterns": [{
+				"anyOf": ["蜘蛛|蚊虫|蚊子|虫子|驱蚊|除虫"],
+				"allOf": []
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q14",
+			"sourceRange": "30问总表!A17:O17",
+			"confirmationChecklist": "本店防虫物资及位置、可提供的清洁/除虫处理、联系时段、换房或补偿的批准条件。"
+		},
+		{
+			"id": "Q15",
+			"question": "卫生没打扫、垃圾没人倒怎么办？",
+			"aliases": [
+				"连住每天有人打扫吗？",
+				"垃圾一直没人倒，能来收一下吗？",
+				"房间没清洁好，今天能补扫吗？"
+			],
+			"text": "请说明您所在的出租单元，需要补扫还是清运垃圾，以及方便处理的时段。清欢连住打扫、免费或收费范围、保洁时段、预约提前量和垃圾清运规则还待商家确认。请通过订单平台联系商家申请本次处理；当前没有已受理、约定时间或清扫完成的确认。",
+			"topics": ["environment"],
+			"intentPatterns": [{
+				"anyOf": ["卫生|打扫|垃圾|保洁|补扫|清洁.{0,4}(?:没做|没做完|不好)"],
+				"allOf": []
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q15",
+			"sourceRange": "30问总表!A18:O18",
+			"confirmationChecklist": "一客一扫或连住打扫政策、免费/收费范围、预约提前量、保洁时段、垃圾清运与补扫渠道。"
+		},
+		{
+			"id": "Q16",
+			"question": "晚上小区路灯暗、独自回家安全吗？",
+			"aliases": [
+				"晚上回去路很黑怎么办？",
+				"一个人夜里回来安全吗？",
+				"夜里我迷路了，管家能来接一下吗？"
+			],
+			"text": "如果您现在觉得不安全，请先到明亮且有人处，遇到跟踪、威胁等现实危险请优先联系当地紧急救援。清欢夜间可走路线、照明情况、值班或物业联系入口、陪同和借手电服务仍待商家确认。请使用订单平台现有的商家联系入口求助；我不能保证路段安全、24小时有人值班或已有人前来。",
+			"topics": ["location", "environment"],
+			"intentPatterns": [{
+				"anyOf": ["路灯暗|路.{0,4}黑|独自回家|夜间安全|一个人.{0,5}(?:晚上|夜里|回来)", "(?:晚上|夜里|半夜).{0,8}(?:迷路|安全|回家|回来)"],
+				"allOf": []
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q16",
+			"sourceRange": "30问总表!A19:O19",
+			"confirmationChecklist": "真实可走夜间路线、照明情况、安全联系/物业渠道、值班时段，是否能陪同或借手电。"
+		},
+		{
+			"id": "Q17",
+			"question": "共享厨房/洗衣机被其他客人占用怎么办？",
+			"aliases": [
+				"洗衣机一直被人占着怎么办？",
+				"共享厨房怎么排队？",
+				"能帮我约个洗衣或做饭的时间吗？"
+			],
+			"text": "请说明您要用厨房还是洗衣机，以及所在出租单元和希望使用的时段。清欢哪些设施共享、使用资格、开放时间、排队或预约规则及替代方案还待商家确认。请通过订单平台联系商家协调；当前没有真实排期或预约结果，也不能默认短租优先或一房一机。",
+			"topics": ["kitchen", "wifi"],
+			"intentPatterns": [{
+				"anyOf": ["占用|被占|一直.{0,5}占|排队|排期|约个|预约|被.{0,8}占|占着"],
+				"allOf": ["厨房|洗衣机|设施|洗衣|做饭"]
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q17",
+			"sourceRange": "30问总表!A20:O20",
+			"confirmationChecklist": "哪些设施实际共享、适用住客、可用时段、预约/排队方法、冲突处理与替代方案。"
+		},
+		{
+			"id": "Q18",
+			"question": "隔音怎么样？小区晚上吵吗？",
+			"aliases": [
+				"房间隔音好不好？",
+				"临街的房间晚上会吵吗？",
+				"隔壁很吵，我睡不着怎么办？"
+			],
+			"text": "隔音和安静程度需要按具体出租单元说明。清欢各房临街或活动影响、已知噪音限制、安静时段、耳塞和投诉渠道还待确认，不能保证完全没有声音。如果您现在受到干扰，请说明单元、时间和噪音来源，通过订单平台联系商家协调；换房或补偿需另行批准。",
+			"topics": ["environment"],
+			"intentPatterns": [{
+				"anyOf": ["隔音|噪音|很吵|吵闹|绝对安静|临街.{0,8}(?:吵|安静)|睡不着"],
+				"allOf": []
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q18",
+			"sourceRange": "30问总表!A21:O21",
+			"confirmationChecklist": "各房型隔音/临街/活动影响的如实说明、安静时段、耳塞是否可提供、噪音投诉渠道。"
+		},
+		{
+			"id": "Q19",
+			"question": "周边怎么玩？有本地攻略和推荐吗？",
+			"aliases": [
+				"带孩子半天怎么安排？",
+				"下雨不想爬山，附近怎么玩？",
+				"想画唐卡，有什么本地体验？"
+			],
+			"text": "可以先到“本地生活”查看吃喝游玩示例；主题路线和真实推荐资料仍待核验接入。您有半天还是一天、几位同行、是否带孩子，更想轻松慢游、雨天室内还是手作体验？清欢原攻略与主题点位的营业、价格、定位、交通和预约信息仍需核验；当前推荐只能作为待核对参考。代订和路线成行须由商家或活动方确认，我不会把咨询当成已预约。",
+			"topics": ["nearby"],
+			"intentPatterns": [{
+				"anyOf": [
+					"周边.{0,8}(?:玩|攻略|推荐)|附近.{0,8}(?:玩|推荐)|本地.{0,8}(?:攻略|体验|推荐)",
+					"亲子.{0,6}半天|带孩子.{0,6}(?:半天|玩)",
+					"(?:下雨|雨天).{0,10}(?:玩|行程|路线)|不想爬山|不爬山|唐卡|一日游"
+				],
+				"allOf": []
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q19",
+			"sourceRange": "30问总表!A22:O22",
+			"confirmationChecklist": "先整合攻略66条及主题新增点位的有效资料；本店可否代订、收费与联系方法；客人当次偏好、人数及可用时间。"
+		},
+		{
+			"id": "Q20",
+			"question": "衣服怎么洗？有烘干吗？",
+			"aliases": [
+				"洗衣机在哪里，怎么用？",
+				"有烘干机吗，洗完能烘吗？",
+				"下雨衣服干不了，有办法吗？"
+			],
+			"text": "清欢本房或公共洗衣设施的位置、机型、洗涤用品、收费和使用时段仍待商家确认；是否有烘干设备也需要单独核实，有洗衣机不代表能烘干。请说明所在单元和洗衣或烘干需求，通过订单平台询问商家。没有设备说明和排期确认前，我不能给出专属操作、扫码解锁或已预约结果。",
+			"topics": ["wifi"],
+			"intentPatterns": [{
+				"anyOf": ["烘干|衣服.{0,5}干不了|晾衣"],
+				"allOf": []
+			}, {
+				"anyOf": ["衣服.{0,5}洗|怎么洗|如何洗|洗衣机在(?:哪|哪里)|洗衣机怎么(?:用|操作)|洗衣设施|能洗衣|可以洗衣|洗衣用品|洗衣液"],
+				"allOf": []
+			}],
+			"phase": "入住中",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q20",
+			"sourceRange": "30问总表!A23:O23",
+			"confirmationChecklist": "本房/公共洗衣设施的位置、可用机型、洗涤用品、使用/收费规则；烘干是否存在、时段与雨天处理办法。"
+		},
+		{
+			"id": "Q21",
+			"question": "押金什么时候退？怎么退？",
+			"aliases": [
+				"我的押金怎么还没退？",
+				"离店后保证金多久到账？",
+				"押金会退回哪个账户？"
+			],
+			"text": "清欢是否收押金、原支付渠道、查房条件、退回方式和到账时效仍待确认。一般退还规则与您这一笔的进度需分开核对；请通过订单平台联系商家，并在受控渠道提供必要支付或订单信息。我没有交易记录，不能断言退款已提交、已到账或保证某个时限。",
+			"topics": ["price"],
+			"intentPatterns": [{
+				"anyOf": ["(?:押金|保证金).{0,10}(?:退(?!改)|到账|没到|还没|哪个账户|多久)", "(?:退|扣|扣留).{0,3}(?:押金|保证金)"],
+				"allOf": []
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q21",
+			"sourceRange": "30问总表!A24:O24",
+			"confirmationChecklist": "是否收押金、金额/支付渠道、查房流程、原路退回条件、到账时效、查询与争议入口。"
+		},
+		{
+			"id": "Q22",
+			"question": "退房超时了怎么收费？能延到下午吗？",
+			"aliases": [
+				"晚两小时退房要多少钱？",
+				"下午再走可以吗？",
+				"超过退房时间有宽限吗？"
+			],
+			"text": "清欢适用的退房时间、超时费阶梯、宽限条件和晚退申请规则仍待商家确认。请说明出租单元、订单渠道、离店日期和希望离店的时间，商家还需结合当日房态决定是否批准；在确认前不能直接晚退，也不能计算未经确认的费用。行李寄存能否替代也需核实。",
+			"topics": ["checkin", "price"],
+			"intentPatterns": [{
+				"anyOf": ["超时退房|退房超时|晚退收费|下午.{0,3}(?:再走|退房)|延到下午|宽限"],
+				"allOf": []
+			}, {
+				"anyOf": ["退房|晚退"],
+				"allOf": ["收费|收钱|费用|多少钱|多少|宽限|超时"]
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q22",
+			"sourceRange": "30问总表!A25:O25",
+			"confirmationChecklist": "各渠道/房型超时收费、阶梯边界、宽限条件、晚退申请截止时间、实际房态确认和寄存替代。"
+		},
+		{
+			"id": "Q23",
+			"question": "东西落在房间怎么办？能寄回吗？",
+			"aliases": [
+				"孩子的玩偶落在房里了怎么办？",
+				"耳机忘拿了，可以寄回来吗？",
+				"我退房了，能帮忙找行李吗？"
+			],
+			"text": "请先通过订单平台联系商家，请其查找，并提供原出租单元、离店时间、物品特征和可能位置。清欢遗失物查找、认领核验、保管期限、邮寄费用及处理规则仍待确认。查找、找到、认领和寄出是不同状态；目前没有找到或寄出的结果，请不要在公开问答留下完整收件地址或证件信息。",
+			"topics": [],
+			"intentPatterns": [{
+				"anyOf": ["遗留物|东西落|忘拿|落在.{0,5}(?:房|民宿)|落下了|寄回来|寄回|找行李|玩偶.{0,5}忘"],
+				"allOf": []
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q23",
+			"sourceRange": "30问总表!A26:O26",
+			"confirmationChecklist": "遗留物联系/登记入口、查找范围与时段、认领核验方式、保管期限、邮寄费用与快递处理规则。"
+		},
+		{
+			"id": "Q24",
+			"question": "厨房没清理/房间弄脏会被扣费吗？标准是什么？",
+			"aliases": [
+				"锅没洗会扣多少钱？",
+				"厨房没收拾算额外清洁吗？",
+				"房间弄脏了，清洁费怎么算？"
+			],
+			"text": "清欢正常使用与深度清洁的界限、适用情形、价目、事前告知和争议处理规则仍待商家确认。锅没洗或房间弄脏是否收费、收多少，需要依据已公示规则和实际情况由授权人员核实；我不能套用未经确认的金额、凭聊天自动定责或作出扣费决定。",
+			"topics": ["kitchen", "price"],
+			"intentPatterns": [{
+				"anyOf": ["清洁扣费|锅没洗|厨房没清理|厨房没收拾|深度清洁|额外清洁费", "(?:弄脏|清理).{0,10}(?:扣|费|收多少|标准)"],
+				"allOf": []
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q24",
+			"sourceRange": "30问总表!A27:O27",
+			"confirmationChecklist": "本店深度清洁费的适用情形/价目、正常使用界限、事前告知与争议处理方式、证据保管规则。"
+		},
+		{
+			"id": "Q25",
+			"question": "发票多久开出来？开错了怎么办？",
+			"aliases": [
+				"发票抬头开错了能重开吗？",
+				"报销发票一直没收到怎么办？",
+				"开票进度在哪里查？"
+			],
+			"text": "清欢实际开票时效、进度查询入口、错误更正或重开流程、费用和办理主体仍待确认。请通过原订单的开票或商家联系入口查询，并在受控渠道说明错误字段；是否已开、能否更正及何时完成，须由有权限人员核对。我不能保证免费重开或固定办结时效或编造个案进度。",
+			"topics": ["price"],
+			"intentPatterns": [{
+				"anyOf": ["发票.{0,8}(?:多久|开错|错了|没收到|没有收到|还没到|没到)|抬头.{0,5}(?:错|开错)|重开.{0,3}发票|开票进度"],
+				"allOf": []
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q25",
+			"sourceRange": "30问总表!A28:O28",
+			"confirmationChecklist": "实际开票时效、进度查询、错误更正/重开流程、是否收费、办理主体与承接渠道。"
+		},
+		{
+			"id": "Q26",
+			"question": "退房后能帮忙叫车/送站吗？",
+			"aliases": [
+				"退房能帮我叫车去车站吗？",
+				"下午三点航班，四个人能送机吗？",
+				"离店拼车怎么约？"
+			],
+			"text": "请说明出发日期、目的机场或车站、航班或列车时间、人数和行李。清欢是否提供送站叫车、服务时段、报价、预约与拼车条件仍待商家确认，请通过订单平台联系商家核实本次能否安排。当前只是需求咨询，没有叫车订单、司机接单或车辆到达的确认。",
+			"topics": ["location", "price"],
+			"intentPatterns": [{
+				"anyOf": ["送站|送机|退房.{0,5}叫车|离店.{0,5}(?:叫车|拼车)|叫车.{0,8}(?:车站|机场)", "航班.{0,10}送|送.{0,6}航班"],
+				"allOf": []
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q26",
+			"sourceRange": "30问总表!A29:O29",
+			"confirmationChecklist": "是否提供送站、实际合作司机/联系归口、费用与预约规则、拼车条件、服务时段及人数/行李限制。"
+		},
+		{
+			"id": "Q27",
+			"question": "对服务不满意找谁？有补偿吗？",
+			"aliases": [
+				"热水一直有问题，我想退钱",
+				"服务不好找谁投诉？",
+				"这次不满意能补偿多少？"
+			],
+			"text": "请说明发生的问题、时间、出租单元和您希望的处理方式，我可以帮您整理同一咨询的情况。清欢真实投诉受理、升级责任、响应时限和补偿权限仍待商家确认，请通过订单平台现有投诉或商家联系入口反馈。退钱、减免或补偿需要授权人员核实，当前没有补偿批准或真人已收到的确认。",
+			"topics": [],
+			"intentPatterns": [{
+				"anyOf": ["投诉|补偿|不满意|退钱|服务不好|赔付|赔钱"],
+				"allOf": []
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q27",
+			"sourceRange": "30问总表!A30:O30",
+			"confirmationChecklist": "投诉受理渠道、当班/升级责任、可确认的响应时效、补偿权限与记录方式。"
+		},
+		{
+			"id": "Q28",
+			"question": "下次来有老客优惠吗？怎么订？",
+			"aliases": [
+				"我是老客，下次订能便宜吗？",
+				"回头客有折扣或升房吗？",
+				"老客户怎么预订，有优惠券吗？"
+			],
+			"text": "清欢是否有老客权益、折扣或升房、有效期、适用房源与渠道、核验和预订入口仍待商家确认。您可以通过原订单平台或已有商家联系入口询问下次日期与房型的实际报价；当前不能保证折扣、送券、升级，也不会生成未经确认的优惠码。",
+			"topics": ["price"],
+			"intentPatterns": [{
+				"anyOf": ["老客|复购|回头客|老客户|下次.{0,5}(?:订|来|优惠|便宜)|优惠券"],
+				"allOf": []
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q28",
+			"sourceRange": "30问总表!A31:O31",
+			"confirmationChecklist": "是否确有老客权益、折扣/升房/礼品具体规则、有效期、适用房源/渠道、核验和预订入口。"
+		},
+		{
+			"id": "Q29",
+			"question": "设施损坏被要求赔偿怎么界定？",
+			"aliases": [
+				"说墙弄脏了让我赔，合理吗？",
+				"设备坏了怎么区分正常损耗？",
+				"我不同意损坏赔偿，能复核吗？"
+			],
+			"text": "清欢设施损坏与正常损耗的界限、已公示价目、入住留证和复核渠道仍待商家确认。是否由您承担、金额多少，需授权人员结合入住前后记录及双方说明核实；您可通过订单平台要求查看依据并申请复核。我不能只凭口述或单方照片判责、报价或自动扣款。",
+			"topics": ["price"],
+			"intentPatterns": [{
+				"anyOf": [
+					"损坏|正常损耗|要求赔偿|赔偿复核",
+					"墙.{0,5}(?:脏|弄脏).{0,8}(?:赔|扣)",
+					"(?:设施|设备).{0,6}(?:坏|赔)|赔偿.{0,8}(?:界定|复核|不同意)"
+				],
+				"allOf": []
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q29",
+			"sourceRange": "30问总表!A32:O32",
+			"confirmationChecklist": "本店损坏判定与正常损耗界限、已公示价目、入住状态留证方式、复核/争议渠道及授权人。"
+		},
+		{
+			"id": "Q30",
+			"question": "退房后有问题还能找到管家吗？",
+			"aliases": [
+				"退房后还能联系管家吗？",
+				"离店有问题在哪里找人？",
+				"半夜有售后问题找谁？"
+			],
+			"text": "离店后可以先从原订单平台已有的商家或客服入口联系。清欢另外提供的售后电话、微信或页面入口、服务时段、夜间和紧急承接规则仍待确认，当前不能保证24小时人工在线。请说明原出租单元、问题和希望的处理方式；本页保存咨询不等于真人已收到，紧急的人身安全问题请优先使用现实紧急求助渠道。",
+			"topics": [],
+			"intentPatterns": [{
+				"anyOf": ["退房后|离店|售后|夜里找管家|半夜.{0,5}找谁"],
+				"allOf": ["联系|找|问题|管家|售后"]
+			}, {
+				"anyOf": ["联系管家"],
+				"allOf": []
+			}],
+			"phase": "退房后",
+			"kind": "confirmation_guide",
+			"requiresHuman": true,
+			"sourceLabel": "清欢30问 · Q30",
+			"sourceRange": "30问总表!A33:O33",
+			"confirmationChecklist": "实际售后电话/微信或页面入口、服务时段、夜间和紧急情况的真实承接渠道、问题分级与交接方式。"
+		}
+	];
+	const knownIds = new Set(QINGHUAN_QUESTIONS.map((guide) => guide.id));
+	const ignored = /[\s？?。！!，,、]/;
+	const normalize = (value) => String(value ?? "").normalize("NFKC").replace(/[\s？?。！!，,、]/g, "").toLowerCase();
+	const questions = (guide) => [guide.question, ...Array.isArray(guide.aliases) ? guide.aliases : []].filter((value) => typeof value === "string" && value.trim()).map(normalize);
+	function patternMatches(guide, question) {
+		return (guide.intentPatterns ?? []).some((group) => {
+			const matches = (expression) => new RegExp(expression, "i").test(question);
+			return (!group.anyOf?.length || group.anyOf.some(matches)) && (!group.allOf?.length || group.allOf.every(matches)) && (!group.noneOf?.length || !group.noneOf.some(matches));
+		});
+	}
+	function takeExactSubquestions(guides, raw, normalized) {
+		const positions = [];
+		for (let index = 0; index < raw.length; index++) if (!ignored.test(raw[index])) positions.push(index);
+		const candidates = [];
+		for (const guide of guides) for (const question of questions(guide)) {
+			let start = normalized.indexOf(question);
+			while (start >= 0) {
+				candidates.push({
+					guide,
+					start,
+					end: start + question.length
+				});
+				start = normalized.indexOf(question, start + question.length);
+			}
+		}
+		candidates.sort((a, b) => b.end - b.start - (a.end - a.start) || a.start - b.start);
+		const spans = [];
+		for (const candidate of candidates) if (!spans.some((span) => candidate.start < span.end && candidate.end > span.start)) spans.push(candidate);
+		spans.sort((a, b) => a.start - b.start);
+		const rest = [];
+		let cursor = 0;
+		for (const span of spans) {
+			rest.push(raw.slice(cursor, positions[span.start]));
+			cursor = positions[span.end - 1] + 1;
+		}
+		rest.push(raw.slice(cursor));
+		return {
+			guides: spans.map((span) => span.guide),
+			remainder: rest.join("；")
+		};
+	}
+	function matchQinghuanGuides(p, question) {
+		const guides = Array.isArray(p?.knowledge) ? p.knowledge.filter((guide) => guide?.kind === "confirmation_guide" && knownIds.has(guide.id)) : [];
+		if (!guides.length || !String(question ?? "").trim()) return [];
+		const normalized = normalize(question);
+		const exact = guides.find((guide) => questions(guide).includes(normalized));
+		if (exact) return [exact];
+		const extracted = takeExactSubquestions(guides, String(question).normalize("NFKC").toLowerCase(), normalized);
+		const clauses = extracted.remainder.split(/[，,。.!！?？；;:：\n]|另外|还有|以及|顺便|并且|同时/).map(normalize).filter(Boolean);
+		const result = new Map(extracted.guides.map((guide) => [guide.id, guide]));
+		for (const guide of guides) if (!result.has(guide.id) && clauses.some((clause) => patternMatches(guide, clause))) result.set(guide.id, guide);
+		return [...result.values()];
+	}
+	//#endregion
+	//#region src/model.mjs
 	const clone$2 = (x) => structuredClone(x);
 	const own$1 = (obj, key) => Object.hasOwn(obj, key);
 	const norm = (x) => String(x ?? "").normalize("NFKC").replace(/[\s？?。！!，,、]/g, "").toLowerCase();
@@ -274,20 +1001,76 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			body: "这个房间不在本民宿当前公开资料中，请重新选择房间。",
 			sources: []
 		};
-		const add = (key, label, text) => {
+		const add = (key, label, text, metadata = {}) => {
 			sources.push({
 				key,
 				label,
 				text,
-				version: p.version
+				version: p.version,
+				...metadata
 			});
 			parts.push(text);
 		};
+		const guideMetadata = (k) => ({
+			kind: k.kind,
+			requiresHuman: k.requiresHuman !== false,
+			sourceLabel: k.sourceLabel,
+			sourceRange: k.sourceRange
+		});
+		const addKnowledge = (k) => add("knowledge:" + k.id, k.question, k.text, k.kind === "confirmation_guide" ? guideMetadata(k) : {});
 		const roomQuestion = /房间|房型|床|卫浴|浴室|几人|几个人|住几|面积|楼层|几楼/.test(q);
+		const contextualQuestion = /开放|时间|几点|这里|这个空间/.test(q) && [
+			"独立庭院",
+			"共享厨房",
+			"共享客厅"
+		].includes(context?.spaceName) ? q + norm(context.spaceName) : q;
+		const matched = Object.entries(TOPICS).filter(([, t]) => t.pattern.test(contextualQuestion));
+		const guideMatches = matchQinghuanGuides(p, question), knowledgeIds = guideMatches.map((guide) => guide.id);
+		const pendingGuide = (k) => k.kind === "confirmation_guide" && k.requiresHuman !== false;
+		const exactKnowledge = p.knowledge.find((k) => !pendingGuide(k) && [k.question, ...k.aliases].some((a) => norm(a) === q));
+		const guides = guideMatches.filter(pendingGuide);
+		if (guideMatches.length && !exactKnowledge) {
+			const covered = new Set(guideMatches.flatMap((guide) => guide.topics ?? [])), extraMissing = [];
+			let extraQuestion = q;
+			const guidePhrases = guideMatches.flatMap((guide) => [guide.question, ...guide.aliases]).map(norm).filter(Boolean).sort((a, b) => b.length - a.length);
+			for (const phrase of guidePhrases) extraQuestion = extraQuestion.replaceAll(phrase, "");
+			const extraMatched = Object.entries(TOPICS).filter(([, topic]) => topic.pattern.test(extraQuestion));
+			for (const guide of guideMatches) {
+				const pending = pendingGuide(guide);
+				const known = (guide.topics ?? []).filter((key) => p.facts[key]?.text?.trim());
+				for (const key of known) if (!sources.some((source) => source.key === key)) add(key, TOPICS[key]?.label || key, p.facts[key].text);
+				if (!pending && known.length) continue;
+				const body = known.length ? `${guide.question}\n其余待确认项：${guide.confirmationChecklist}（以上公开规则已明确的部分除外）。` : guide.text;
+				add("knowledge:" + guide.id, guide.id + (pending ? " · 待确认指南" : " · 已确认公开答复"), body, guideMetadata(guide));
+			}
+			for (const [key, topic] of extraMatched) {
+				const fact = p.facts[key];
+				if (fact?.text?.trim()) {
+					if (!sources.some((source) => source.key === key)) add(key, topic.label, fact.text);
+				} else if (!covered.has(key)) extraMissing.push(topic.label);
+			}
+			if (extraMissing.length) parts.push(`本店资料尚未记录${extraMissing.join("、")}，我暂时无法确认。可以点击下方「请管家确认」，把问题交给民宿管家。`);
+			return {
+				status: guides.length || extraMissing.length ? "needs_human" : "answered",
+				body: parts.join("\n\n"),
+				sources,
+				knowledgeIds
+			};
+		}
 		let needsClarification = false, missing = [];
 		const wholeQuestion = p.rentalMode === "whole" && /整院|包栋|整栋|几间卧室/.test(q);
+		if (exactKnowledge && !wholeQuestion && !matched.some(([key]) => p.facts[key]?.text?.trim())) {
+			addKnowledge(exactKnowledge);
+			return {
+				status: "answered",
+				body: parts.join("\n\n"),
+				sources,
+				knowledgeIds
+			};
+		}
 		if (wholeQuestion) add("whole", "整院配置", `${p.name}按整院包栋出租，包含${p.rooms.length}间卧室，不单独出租卧室。${p.wholeCapacity || "整院总入住人数尚未记录，请管家确认。"}床型配置：${p.rooms.map((r) => r.name + "，" + r.beds).join("；")}。`);
-		if (roomQuestion && !wholeQuestion) {
+		if (roomQuestion && !wholeQuestion) if (p.profilePending === true && !p.rooms.length) missing.push("房间配置与面积（房源资料待录入）");
+		else {
 			const named = p.rooms.filter((r) => q.includes(norm(r.name.split(" · ")[0])) || q.includes(norm(r.type)));
 			const room = context?.roomId ? p.rooms.find((r) => r.id === context.roomId) : named.length === 1 ? named[0] : null;
 			if (room) add("room:" + room.id, room.name, `${room.name}位于${room.floor}，${room.area}，配置${room.beds}、${room.bath}，${room.capacity}。已记录设施：${room.facilities.join("、")}。`);
@@ -296,24 +1079,18 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 				parts.push("你想了解哪一间房？可以先在「房间设施」选择" + p.rooms.map((r) => r.name).join("、") + "，再带着房间来问我。");
 			}
 		}
-		const contextualQuestion = /开放|时间|几点|这里|这个空间/.test(q) && [
-			"独立庭院",
-			"共享厨房",
-			"共享客厅"
-		].includes(context?.spaceName) ? q + norm(context.spaceName) : q;
-		const matched = Object.entries(TOPICS).filter(([, t]) => t.pattern.test(contextualQuestion));
 		for (const [key, t] of matched) {
 			const fact = p.facts[key];
 			if (fact?.text?.trim()) add(key, t.label, fact.text);
 			else {
-				const k = p.knowledge.find((k) => [k.question, ...k.aliases].some((a) => norm(a) === q));
-				if (k && !sources.some((s) => s.key === "knowledge:" + k.id)) add("knowledge:" + k.id, k.question, k.text);
+				const k = exactKnowledge;
+				if (k && !sources.some((s) => s.key === "knowledge:" + k.id)) addKnowledge(k);
 				else if (!k) missing.push(t.label);
 			}
 		}
 		if (!matched.length && !roomQuestion && !wholeQuestion) {
-			const k = p.knowledge.find((k) => [k.question, ...k.aliases].some((a) => norm(a) === q));
-			if (k) add("knowledge:" + k.id, k.question, k.text);
+			const k = exactKnowledge;
+			if (k) addKnowledge(k);
 			else if (/^(你好|您好|嗨|hello|hi)$/.test(q)) return {
 				status: "answered",
 				body: `你好，我是${p.name}的AI管家。可以问我厨房、停车、入住，或先看看房间。资料里没有的，我会请民宿管家确认。`,
@@ -325,7 +1102,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return {
 			status: missing.length ? "needs_human" : needsClarification ? "needs_clarification" : "answered",
 			body: parts.join("\n\n"),
-			sources
+			sources,
+			knowledgeIds
 		};
 	}
 	function guestThreads(state, sessionId) {
@@ -344,7 +1122,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		for (const k of Object.keys(TOPICS)) if (d.facts[k]) {
 			if (typeof d.facts[k].text !== "string" || d.facts[k].text.length > 1e3) throw Error("使用规则需在1000字以内");
 		}
-		if (d.rooms.length < 1 || d.rooms.length > 10) throw Error("请保留1—10间房");
+		if (d.rooms.length < (d.profilePending === true ? 0 : 1) || d.rooms.length > 10) throw Error("请保留1—10间房");
 		for (const r of d.rooms) for (const k of [
 			"name",
 			"floor",
@@ -424,6 +1202,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 				body: a.body,
 				status: a.status,
 				sources: a.sources,
+				knowledgeIds: clone$2(a.knowledgeIds ?? []),
 				replyTo: guestId,
 				at: now
 			});
@@ -441,6 +1220,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 					messageId: m.id,
 					question: g.body,
 					context: g.context,
+					knowledgeIds: clone$2(m.knowledgeIds ?? []),
 					status: "pending",
 					createdAt: now,
 					reply: null
@@ -472,13 +1252,18 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			s.draftDirty = true;
 		}
 		if (type === "SAVE_KNOWLEDGE") {
+			const knowledgeId = action.knowledgeId ?? id(), idx = s.draft.knowledge.findIndex((x) => x.id === knowledgeId), previous = s.draft.knowledge[idx];
 			const k = {
-				id: action.knowledgeId ?? id(),
+				...previous,
+				id: knowledgeId,
 				question: text(action.question, "公开问题", 200),
 				text: text(action.text, "公开答案"),
 				aliases: (action.aliases ?? []).map((a) => text(a, "相似问法", 200))
 			};
-			const idx = s.draft.knowledge.findIndex((x) => x.id === k.id);
+			if (previous?.kind === "confirmation_guide") {
+				if (own$1(action, "requiresHuman") && typeof action.requiresHuman !== "boolean") throw Error("请明确选择是否仍需人工确认");
+				k.requiresHuman = own$1(action, "requiresHuman") ? action.requiresHuman : previous.requiresHuman !== false;
+			}
 			if (idx < 0) s.draft.knowledge.push(k);
 			else s.draft.knowledge[idx] = k;
 			validateDraft(s.draft);
@@ -503,7 +1288,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return s;
 	}
 	//#endregion
-	//#region ../团队在线演示-v0.4/dist/src/icons.mjs
+	//#region src/icons.mjs
 	const paths = {
 		home: "<path d=\"m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z\"/><path d=\"M9 21v-8h6v8\"/>",
 		house: "<path d=\"m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8\"/><path d=\"M17 3v4\"/>",
@@ -541,7 +1326,27 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	};
 	const icon = (name, cls = "") => `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.home}</svg>`;
 	//#endregion
-	//#region ../团队在线演示-v0.4/dist/src/local-life.mjs
+	//#region src/merchant-ui.mjs
+	const esc$1 = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+		"&": "&amp;",
+		"<": "&lt;",
+		">": "&gt;",
+		"\"": "&quot;",
+		"'": "&#39;"
+	})[c]);
+	function originalConversationMarkup(preview) {
+		const all = preview.thread.messages, assistant = all.find((m) => m.id === preview.ticket?.messageId);
+		const selected = assistant ? all.filter((m) => m.id === assistant.replyTo || m.id === assistant.id || m.replyTo === assistant.id) : all;
+		const rest = all.filter((m) => !selected.includes(m));
+		const render = (messages) => messages.map((m) => `<article class="reply-ai"><strong>${{
+			guest: "客人",
+			assistant: "AI管家",
+			merchant: "民宿管家 · 人工回复"
+		}[m.role] || "咨询记录"}</strong><p class="preserve-lines">${esc$1(m.body)}</p>${m.sources?.length ? `<p class="small muted">依据：${m.sources.map((s) => esc$1(s.label) + " · V" + s.version).join("、")}</p>` : ""}</article>`).join("");
+		return `<p class="notice">${esc$1(preview.propertyName)} · ${esc$1(preview.unitName)}<br>只读回看原客人会话，不切换客人身份。</p><div class="conversation-preview">${render(selected)}${rest.length ? `<details><summary>展开原会话其他对话（${rest.length}条）</summary>${render(rest)}</details>` : ""}</div>`;
+	}
+	//#endregion
+	//#region src/local-life.mjs
 	const day = 864e5;
 	const clone$1 = (x) => structuredClone(x);
 	const clean = (s, label, max = 200) => {
@@ -742,7 +1547,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return n;
 	}
 	//#endregion
-	//#region ../团队在线演示-v0.4/dist/src/catalog.mjs
+	//#region src/catalog.mjs
 	const clone = (x) => structuredClone(x);
 	const own = (o, k) => typeof k === "string" && Object.hasOwn(o, k);
 	function sample(propertyId, name, roomNames) {
@@ -823,14 +1628,57 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 				note: "保留旧版资料与咨询"
 			};
 		}
-		return {
+		return ensureQinghuanWorkspace({
 			schema: 2,
 			revision: 0,
 			merchants,
 			properties,
 			life: createLife(),
 			lifeChats: {}
+		});
+	}
+	function qinghuanEntry() {
+		const state = createSeed();
+		state.propertyId = "qinghuan-dali";
+		state.draft = {
+			...state.draft,
+			name: "清欢 · 大理资料预览",
+			subtitle: "入住前后常见问题，在这里问清楚。",
+			location: "云南 · 大理（具体房源与地址待确认）",
+			description: "依据清欢整理的30个高频问题提供接待指引。真实房源、出租方式、店规和服务能力仍需逐项确认；参考VR不代表当前房源。",
+			profilePending: true,
+			rentalMode: "pending",
+			facts: {},
+			rooms: [],
+			knowledge: clone(QINGHUAN_QUESTIONS),
+			vrLabel: "参考体验 · 真实VR素材待提供",
+			vrDescription: "真实房源VR待提供，当前仅展示参考体验。"
 		};
+		state.published = {
+			...clone(state.draft),
+			version: 1,
+			publishedAt: Date.now()
+		};
+		return {
+			merchantId: "qinghuan",
+			rentalMode: "pending",
+			city: {
+				id: "dali",
+				name: "大理"
+			},
+			state
+		};
+	}
+	function ensureQinghuanWorkspace(w) {
+		if (own(w.properties, "qinghuan-dali")) return w;
+		const next = clone(w);
+		next.merchants.qinghuan = {
+			name: "清欢 · 大理资料预览",
+			note: "30问接待指引；真实店规待确认"
+		};
+		next.properties["qinghuan-dali"] = qinghuanEntry();
+		next.revision++;
+		return next;
 	}
 	function entry(w, pid) {
 		if (!own(w.properties, pid)) throw Error("房源不存在");
@@ -838,6 +1686,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	function shareUnits(w, pid) {
 		const p = entry(w, pid), s = p.state.published;
+		if (p.rentalMode === "pending") return [];
 		if (p.rentalMode === "whole") return [{
 			id: "whole",
 			name: s.name,
@@ -900,8 +1749,10 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return n;
 	}
 	function updateRentalMode(w, merchantId, pid, mode) {
-		if (entry(w, pid).merchantId !== merchantId) throw Error("只能设置当前商家的房源");
+		const p = entry(w, pid);
+		if (p.merchantId !== merchantId) throw Error("只能设置当前商家的房源");
 		if (!["room", "whole"].includes(mode)) throw Error("请选择单间出租或整院包栋");
+		if (!p.state.published.rooms.length) throw Error("请先补齐真实房间资料与房源配置，再设置出租方式和生成分享链接");
 		const n = clone(w), pNext = n.properties[pid];
 		pNext.rentalMode = mode;
 		pNext.state.draft.rentalMode = mode;
@@ -912,8 +1763,34 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		n.revision++;
 		return n;
 	}
+	function ticketPreview(w, { merchantId, propertyId, ticketId }) {
+		const p = entry(w, propertyId);
+		if (p.merchantId !== merchantId) throw Error("当前商家无权查看此房源咨询");
+		const ticket = p.state.tickets[ticketId];
+		const thread = ticket && p.state.threads[ticket.threadId];
+		if (!ticket || !thread || thread.propertyId !== p.state.propertyId) throw Error("原咨询会话不存在，请返回工作台");
+		const room = p.state.published.rooms.find((r) => r.id === ticket.context?.roomId);
+		return clone({
+			propertyId,
+			propertyName: p.state.published.name,
+			unitName: room?.name || (ticket.context?.unitId === "whole" ? "整院包栋" : "本房源咨询"),
+			ticket,
+			thread
+		});
+	}
+	function merchantPendingSummary(w, merchantId) {
+		const properties = Object.entries(w.properties).filter(([, p]) => p.merchantId === merchantId).map(([propertyId, p]) => ({
+			propertyId,
+			name: p.state.published.name,
+			pending: Object.values(p.state.tickets).filter((t) => t.status !== "replied").length
+		}));
+		return {
+			total: properties.reduce((sum, p) => sum + p.pending, 0),
+			properties
+		};
+	}
 	//#endregion
-	//#region ../团队在线演示-v0.4/dist/src/life-ui.mjs
+	//#region src/life-ui.mjs
 	const e = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
 		"&": "&amp;",
 		"<": "&lt;",
@@ -1007,7 +1884,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		].map(([k, l, v]) => `<label class="field">${l}<input name="${k}" maxlength="${k === "sourceUrl" ? 1e3 : 200}" value="${e(v)}" ${k === "sourceUrl" ? "type=\"url\"" : "required"}></label>`).join("")}<label class="field">开始时间<input name="start" type="datetime-local" value="${a ? localInput(a.start) : ""}" required></label><label class="field">结束时间<input name="end" type="datetime-local" value="${a ? localInput(a.end) : ""}" required></label><label class="field">活动状态<select name="status"><option value="active" ${a?.status !== "cancelled" ? "selected" : ""}>正常</option><option value="cancelled" ${a?.status === "cancelled" ? "selected" : ""}>已取消</option></select></label><label class="field">活动说明<textarea name="description" maxlength="1000">${e(a?.description || "")}</textarea></label><p class="notice">保存后进入本工具的活动资料库，不会向原小程序发布，也不会自动标为已核验。</p><button type="submit" class="btn wide">保存活动资料</button></form></div>`;
 	}
 	//#endregion
-	//#region ../团队在线演示-v0.4/dist/src/presentation.mjs
+	//#region src/presentation.mjs
 	function isMobilePresentation(search, width) {
 		return new URLSearchParams(search).get("mobile") === "1" || width <= 760;
 	}
@@ -1020,7 +1897,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return url.href;
 	}
 	//#endregion
-	//#region ../团队在线演示-v0.4/dist/src/app.mjs
+	//#region src/app.mjs
 	const STORAGE = "minsu-mini-v040";
 	const LEGACY_STORAGE = "minsu-mini-v030";
 	const SESSION = "minsu-mini-guest-session";
@@ -1076,6 +1953,15 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	} catch {
 		workspace = createWorkspace();
 		storageError = "本地资料暂时无法读取，保留原数据并显示示例。请检查浏览器存储后重试。";
+	}
+	try {
+		const upgraded = ensureQinghuanWorkspace(workspace);
+		if (upgraded !== workspace) {
+			localStorage.setItem(STORAGE, JSON.stringify(upgraded));
+			workspace = upgraded;
+		}
+	} catch {
+		storageError = "清欢资料未能补入浏览器存储，原有资料保留。请检查存储后刷新。";
 	}
 	function setActive() {
 		target = resolveTarget(workspace, location.search);
@@ -1182,7 +2068,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		location.href = propertyUrl(location.href, pid, r);
 	}
 	function demoSelectors() {
-		return `<div class="demo-selectors"><label>演示商家<select id="merchant-select" aria-label="选择演示商家">${Object.entries(workspace.merchants).map(([id, m]) => `<option value="${id}" ${id === merchantId ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label><label>当前房源<select id="property-select" aria-label="选择当前房源">${Object.entries(workspace.properties).filter(([, p]) => p.merchantId === merchantId).map(([id, p]) => `<option value="${id}" ${id === activePropertyId ? "selected" : ""}>${esc(p.state.published.name)} · ${p.rentalMode === "room" ? "按间" : "整院"}</option>`).join("")}</select></label></div>`;
+		return `<div class="demo-selectors"><label>演示商家<select id="merchant-select" aria-label="选择演示商家">${Object.entries(workspace.merchants).map(([id, m]) => `<option value="${id}" ${id === merchantId ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label><label>当前房源<select id="property-select" aria-label="选择当前房源">${Object.entries(workspace.properties).filter(([, p]) => p.merchantId === merchantId).map(([id, p]) => `<option value="${id}" ${id === activePropertyId ? "selected" : ""}>${esc(p.state.published.name)} · ${p.rentalMode === "pending" ? "待确认" : p.rentalMode === "room" ? "按间" : "整院"}</option>`).join("")}</select></label></div>`;
 	}
 	function go(route) {
 		const h = "#/" + route;
@@ -1327,7 +2213,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 				[
 					"shield",
 					"案例来源始终可见",
-					"参考VR不是松间小院实拍，不把其中房间、面积或设施当作本店事实。"
+					"参考VR非当前民宿实拍，不把其中房间、面积或设施当作本店事实。"
 				],
 				[
 					"chat",
@@ -1524,7 +2410,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		lastRoute = location.hash;
 		document.body.classList.toggle("customer-preview", customerPreview);
 		document.body.classList.toggle("mobile-presentation", mobilePresentation());
-		$("#app").innerHTML = `<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTciIGZpbGw9IiMyNDRmNDAiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmNmY2ZWUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTMgMzEgMzIgMTVsMTkgMTZNMTkgMjh2MjJoMjZWMjhNMjggNTBWMzZoOHYxNCIvPjxwYXRoIGQ9Ik00MiAxNnY3Ii8+PC9nPjwvc3ZnPgo=" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>NAS 演示 · v0.4</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon("house")} 小程序风格演示 <strong>· ${r === "guest" ? "客人端" : r === "merchant" ? "商家端" : "平台端"}</strong></span><span>${mobileOpen ? "收起讲解" : "演示控制"} ${icon(mobileOpen ? "close" : "more")}</span></button><main class="workspace">${mobilePresentation() ? "" : narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${esc(state.published.name)} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon("signal")}${icon("wifi")}${icon("battery")}</span></div><header class="mini-header"><div class="mini-title">${info.back ? `<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon("back")}</button>` : ""}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation() && !customerPreview ? "演示入口与说明" : "小程序演示说明"}">${icon("more")}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError ? `<div class="error-banner">${esc(storageError)}</div>` : ""}${localChat ? lifeChat(workspace.life, currentCity(), lifeMessages()) : chat ? renderChat() : `<div class="phone-body ${p === "vr" && r === "guest" ? "vr-body" : ""}" id="phone-scroll">${content()}</div>`}${noTabs ? "" : tabbar()}${localChat ? lifeComposer(lifeDraft) : chat ? composerView() : r === "merchant" && p === "editor" ? editorActions() : ""}${r === "guest" && ["room", "space"].includes(p) ? detailActions() : ""}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
+		$("#app").innerHTML = `<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTciIGZpbGw9IiMyNDRmNDAiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmNmY2ZWUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTMgMzEgMzIgMTVsMTkgMTZNMTkgMjh2MjJoMjZWMjhNMjggNTBWMzZoOHYxNCIvPjxwYXRoIGQ9Ik00MiAxNnY3Ii8+PC9nPjwvc3ZnPgo=" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.4.1</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon("house")} 小程序风格演示 <strong>· ${r === "guest" ? "客人端" : r === "merchant" ? "商家端" : "平台端"}</strong></span><span>${mobileOpen ? "收起讲解" : "演示控制"} ${icon(mobileOpen ? "close" : "more")}</span></button><main class="workspace">${mobilePresentation() ? "" : narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${esc(state.published.name)} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon("signal")}${icon("wifi")}${icon("battery")}</span></div><header class="mini-header"><div class="mini-title">${info.back ? `<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon("back")}</button>` : ""}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation() && !customerPreview ? "演示入口与说明" : "小程序演示说明"}">${icon("more")}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError ? `<div class="error-banner">${esc(storageError)}</div>` : ""}${localChat ? lifeChat(workspace.life, currentCity(), lifeMessages()) : chat ? renderChat() : `<div class="phone-body ${p === "vr" && r === "guest" ? "vr-body" : ""}" id="phone-scroll">${content()}</div>`}${noTabs ? "" : tabbar()}${localChat ? lifeComposer(lifeDraft) : chat ? composerView() : r === "merchant" && p === "editor" ? editorActions() : ""}${r === "guest" && ["room", "space"].includes(p) ? detailActions() : ""}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
 		if (chat || localChat) {
 			const c = $(".chat-scroll");
 			if (c) c.scrollTop = c.scrollHeight;
@@ -1573,12 +2459,28 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	function home() {
 		const p = guestProperty();
-		return `${inlineVr("首页VR看房")}<div class="home-main vr-first"><div class="property-heading"><h1>${esc(p.name)}</h1>${icon("leaf")}</div><p class="property-location">${icon("pin")}${esc(p.location)}</p><p class="property-tagline">${esc(p.subtitle)}</p><span class="rental-badge">${currentEntry().rentalMode === "whole" ? "整院包栋 · 卧室不单独出租" : target.unitId ? "当前分享：单间出租" : "按间出租 · 可分别分享房间"}</span><section class="ai-entry"><div class="ai-entry-title">${icon("spark")}<strong>AI 民宿管家</strong><small>随时问，少等待</small></div><p>停车、入住、厨房和房间，想问什么？</p><button class="ask-link" data-action="switch-chat"><span>问问这家民宿的事…</span>${icon("arrow")}</button></section>${lifeCard(currentCity())}<div class="section-title"><h2>${currentEntry().rentalMode === "whole" ? "整院里的卧室" : "喜欢的房间，先看看"}</h2><button class="text-btn" data-action="nav" data-route="guest/rooms">房间设施 ${icon("chevron")}</button></div><div class="room-preview">${p.rooms.map((r) => `<button class="preview-item" data-action="nav" data-route="guest/room/${esc(r.id)}">${photo(r.photo, "preview-photo", r.name + "（AI示例图）")}<strong>${esc(r.name)}</strong><small>${esc(r.area)} · ${esc(r.beds)}</small></button>`).join("")}</div><div class="amenities">${[
-			["kitchen", "共享厨房"],
-			["parking", "免费停车位"],
-			["wifi", "客房Wi-Fi"],
-			["leaf", "独立庭院"]
-		].map(([i, l]) => `<span class="amenity">${icon(i)}${l}</span>`).join("")}</div><div class="section-title"><h2>关于这座小院</h2></div><p class="intro-copy">${esc(p.description)}</p><div class="facts-list">${[
+		return `${inlineVr("首页VR看房")}<div class="home-main vr-first"><div class="property-heading"><h1>${esc(p.name)}</h1>${icon("leaf")}</div><p class="property-location">${icon("pin")}${esc(p.location)}</p><p class="property-tagline">${esc(p.subtitle)}</p><span class="rental-badge">${currentEntry().rentalMode === "pending" ? "出租方式待店方确认" : currentEntry().rentalMode === "whole" ? "整院包栋 · 卧室不单独出租" : target.unitId ? "当前分享：单间出租" : "按间出租 · 可分别分享房间"}</span><section class="ai-entry"><div class="ai-entry-title">${icon("spark")}<strong>AI 民宿管家</strong><small>随时问，少等待</small></div><p>停车、入住、厨房和房间，想问什么？</p><button class="ask-link" data-action="switch-chat"><span>问问这家民宿的事…</span>${icon("arrow")}</button></section>${lifeCard(currentCity())}<div class="section-title"><h2>${currentEntry().rentalMode === "pending" ? "真实房源资料待补齐" : currentEntry().rentalMode === "whole" ? "整院里的卧室" : "喜欢的房间，先看看"}</h2><button class="text-btn" data-action="nav" data-route="guest/rooms">房间设施 ${icon("chevron")}</button></div>${p.profilePending ? "<p class=\"notice\">已接入清欢30问接待指引。具体店规尚未确认时，AI会说明缺项并请管家确认。</p>" : ""}<div class="room-preview">${p.rooms.map((r) => `<button class="preview-item" data-action="nav" data-route="guest/room/${esc(r.id)}">${photo(r.photo, "preview-photo", r.name + "（AI示例图）")}<strong>${esc(r.name)}</strong><small>${esc(r.area)} · ${esc(r.beds)}</small></button>`).join("")}</div><div class="amenities">${[
+			[
+				"kitchen",
+				"kitchen",
+				"厨房说明"
+			],
+			[
+				"parking",
+				"parking",
+				"停车说明"
+			],
+			[
+				"wifi",
+				"wifi",
+				"网络设施"
+			],
+			[
+				"environment",
+				"leaf",
+				"公共区域"
+			]
+		].map(([k, i, l]) => `<button class="amenity" data-action="fact" data-key="${k}">${icon(i)}${l}</button>`).join("")}</div><div class="section-title"><h2>关于这座小院</h2></div><p class="intro-copy">${esc(p.description)}</p><div class="facts-list">${[
 			[
 				"checkin",
 				"clock",
@@ -1597,7 +2499,9 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		].map(([k, i, l]) => `<button class="fact-row" data-action="fact" data-key="${k}">${icon(i)}<span>${l}</span>${icon("chevron")}</button>`).join("")}</div><p class="demo-footnote">示例资料仅供原型演示 · 吃喝玩乐可进入本地生活<br>${esc(state.published.name)} · 期待与你相遇</p></div>`;
 	}
 	function rooms() {
-		const p = guestProperty(), showRooms = roomFilter !== "spaces", showSpaces = roomFilter !== "bedrooms";
+		const p = guestProperty();
+		if (!p.rooms.length) return `<div class="page-pad"><h1 class="page-title">房源资料待确认</h1><p class="page-description">真实房间、床型、设施和出租方式尚未录入。可以先向AI管家提问，由管家逐项确认。</p>${btn("问问AI管家", "switch-chat", "wide")}</div>`;
+		const showRooms = roomFilter !== "spaces", showSpaces = roomFilter !== "bedrooms";
 		return `<div class="page-pad"><h1 class="page-title">把每个空间，看清楚。</h1><p class="page-description">房间、院子、厨房与公共区域，都在这里。</p><nav class="page-filter" aria-label="空间分类">${[
 			["all", "全部空间"],
 			["bedrooms", "卧室"],
@@ -1664,46 +2568,69 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	function renderChat() {
 		const t = currentThread(), messages = t?.messages || [];
-		return `<div class="chat-info">${icon("shield")} 只根据本店已公开资料回答 · 本地问答演示</div><div class="phone-body chat-body" id="phone-scroll"><div class="chat-scroll">${messages.length ? `<p class="chat-time">今天 ${time(messages[0].at)}</p>${!state.visible ? "<p class=\"chat-history-banner\">资料已暂停展示，保留历史对话；新的咨询暂不可发送。</p>" : ""}${messages.map((m) => message(m, t)).join("")}` : `<div class="welcome"><div class="ai-avatar">${icon("spark")}</div><h1>你好，我是小院管家。<br><span>这趟旅程，想了解什么？</span></h1><p>厨房能不能做饭，车停在哪里，房间适不适合你…<br>知道的告诉你，不确定的请管家确认。</p></div><div class="suggested">${[
+		return `<div class="chat-info">${icon("shield")} <span>${state.published.profilePending ? "清欢30问接待指引 · 店规待确认" : "只根据本店已公开资料回答 · 本地问答演示"}</span>${state.published.knowledge.some((k) => k.kind === "confirmation_guide") ? "<button class=\"text-btn\" data-action=\"question-library\">常见30问</button>" : ""}</div><div class="phone-body chat-body" id="phone-scroll"><div class="chat-scroll">${messages.length ? `<p class="chat-time">今天 ${time(messages[0].at)}</p>${!state.visible ? "<p class=\"chat-history-banner\">资料已暂停展示，保留历史对话；新的咨询暂不可发送。</p>" : ""}${messages.map((m) => message(m, t)).join("")}` : `<div class="welcome"><div class="ai-avatar">${icon("spark")}</div><h1>你好，我是小院管家。<br><span>这趟旅程，想了解什么？</span></h1><p>厨房能不能做饭，车停在哪里，房间适不适合你…<br>知道的告诉你，不确定的请管家确认。</p></div><div class="suggested">${(state.published.profilePending ? [
+			"从机场/高铁站怎么到院子？能安排接站吗？",
+			"自驾好停车吗？收费吗？有充电桩吗？",
+			"含早餐吗？可以自己做饭吗？",
+			"东西落在房间怎么办？能寄回吗？"
+		] : [
 			"厨房能做饭吗",
 			"怎么停车",
 			"几点可以入住",
 			"可以带宠物吗"
-		].map((q) => `<button data-action="prefill" data-question="${q}">${q}${icon("arrow")}</button>`).join("")}</div><p class="chat-tip">先选一个问题，或在下方自由输入。<br>选择后可继续修改，点击发送才会提交。</p>`}</div></div>`;
+		]).map((q) => `<button data-action="prefill" data-question="${q}">${q}${icon("arrow")}</button>`).join("")}</div><p class="chat-tip">先选一个问题，或在下方自由输入。<br>选择后可继续修改，点击发送才会提交。</p>`}</div></div>`;
 	}
 	function message(m, t) {
 		const ticket = Object.values(state.tickets).find((x) => x.messageId === m.id), human = m.role === "merchant", guest = m.role === "guest";
 		const context = m.context?.roomId ? state.published.rooms.find((r) => r.id === m.context.roomId)?.name : m.context?.spaceName;
-		return `<article class="message ${m.role}">${guest ? "" : `<span class="message-avatar">${icon(human ? "person" : "spark")}</span>`}<div class="message-content">${guest ? "" : `<p class="message-name">${human ? "民宿管家 · 人工回复" : "AI小院管家"}</p>`}<div class="message-bubble">${context ? `<span class="message-context">关于 ${esc(context)}</span>` : ""}${esc(m.body)}</div>${m.sources?.length ? `<button class="message-source" data-action="sources" data-thread="${t.id}" data-message="${m.id}">${icon("book")} 依据：${esc(m.sources.map((s) => s.label).join("、"))} <span>V${m.sources[0].version}${m.sources[0].version !== state.published.version ? " · 已更新" : ""}</span>${icon("chevron")}</button>` : ""}${!guest && !human ? ticket ? `<p class="handoff-state">${icon(ticket.status === "replied" ? "check" : "clock")}${ticket.status === "replied" ? "管家已回复，见下方" : ticket.status === "processing" ? "管家已接手，等待人工回复" : "已交给管家，等待接手"}</p>` : `<button class="handoff-button" data-action="handoff" data-thread="${t.id}" data-message="${m.id}">${icon("person")} ${m.status === "needs_human" ? "请管家确认" : "继续请教人工管家"}</button>` : ""}</div></article>`;
+		return `<article class="message ${m.role}">${guest ? "" : `<span class="message-avatar">${icon(human ? "person" : "spark")}</span>`}<div class="message-content">${guest ? "" : `<p class="message-name">${human ? "民宿管家 · 人工回复" : "AI小院管家"}</p>`}<div class="message-bubble">${context ? `<span class="message-context">关于 ${esc(context)}</span>` : ""}${esc(m.body)}</div>${m.sources?.length ? `<button class="message-source" data-action="sources" data-thread="${t.id}" data-message="${m.id}">${icon("book")} 依据：${esc(m.sources.map((s) => s.label).join("、"))} <span>V${m.sources[0].version}${m.sources[0].version !== state.published.version ? " · 已更新" : ""}</span>${icon("chevron")}</button>` : ""}${m.knowledgeIds?.includes("Q19") ? "<button class=\"handoff-button\" data-action=\"nav\" data-route=\"guest/life\">去本地生活看看</button>" : ""}${!guest && !human ? ticket ? `<p class="handoff-state">${icon(ticket.status === "replied" ? "check" : "clock")}${ticket.status === "replied" ? "管家已回复，见下方" : ticket.status === "processing" ? "管家已接手，等待人工回复" : "已交给管家，等待接手"}</p>` : `<button class="handoff-button" data-action="handoff" data-thread="${t.id}" data-message="${m.id}">${icon("person")} ${m.status === "needs_human" ? "请管家确认" : "继续请教人工管家"}</button>` : ""}</div></article>`;
 	}
 	function composerView() {
 		const context = composer.context?.roomId ? state.published.rooms.find((r) => r.id === composer.context.roomId)?.name : composer.context?.spaceName;
 		return `<form id="chat-form" class="chat-composer">${context ? `<div class="composer-context"><span>${icon("bed")} 正在问：${esc(context)}</span><button type="button" data-action="clear-context" aria-label="移除空间上下文">${icon("close")}</button></div>` : ""}<div class="composer-row"><textarea id="chat-input" name="question" aria-label="输入想问管家的问题" placeholder="问问厨房、停车、入住…" maxlength="1000" rows="1" ${!sessionId || !state.visible ? "disabled" : ""}>${esc(composer.body)}</textarea><button class="send-button" type="submit" aria-label="发送问题" ${!composer.body.trim() || !sessionId || !state.visible ? "disabled" : ""}>${icon("send")}</button></div><p class="composer-note">AI为本地资料匹配演示 · 不确定的事由管家确认</p></form>`;
 	}
 	function vr() {
-		return `<iframe class="vr-frame" title="第三方VR看房参考案例，非当前民宿" src="${esc(state.published.vrUrl)}" allow="fullscreen; gyroscope; accelerometer" referrerpolicy="no-referrer"></iframe><div class="vr-description"><p class="vr-loading">拖动全景探索空间，首次加载可能需要片刻。若长时间空白，请打开原站。</p><h1>${esc(state.published.vrDescription || "走进空间，感受一间民宿。")}</h1><p>当前使用指定的第三方VR参考案例，不是松间小院实拍。案例中的房间与设施不作为本店资料。</p><a class="btn secondary wide" href="${esc(state.published.vrUrl)}" target="_blank" rel="noopener noreferrer">${icon("external")} 打开VR原站</a><button class="text-btn" data-action="switch-chat">看完了，问问AI管家 ${icon("arrow")}</button><p class="vr-source">来源：途家 · 如视 Realsee<br>仅作体验参考 · 不绑定本店房间</p></div>`;
+		return `<iframe class="vr-frame" title="第三方VR看房参考案例，非当前民宿" src="${esc(state.published.vrUrl)}" allow="fullscreen; gyroscope; accelerometer" referrerpolicy="no-referrer"></iframe><div class="vr-description"><p class="vr-loading">拖动全景探索空间，首次加载可能需要片刻。若长时间空白，请打开原站。</p><h1>${esc(state.published.vrDescription || "走进空间，感受一间民宿。")}</h1><p>当前使用指定的第三方VR参考案例，非当前民宿实拍。案例中的房间与设施不作为本店资料。</p><a class="btn secondary wide" href="${esc(state.published.vrUrl)}" target="_blank" rel="noopener noreferrer">${icon("external")} 打开VR原站</a><button class="text-btn" data-action="switch-chat">看完了，问问AI管家 ${icon("arrow")}</button><p class="vr-source">来源：途家 · 如视 Realsee<br>仅作体验参考 · 不绑定本店房间</p></div>`;
 	}
 	function vrEditor() {
 		const d = vrCache || state.draft;
 		return `<div class="page-pad"><h1 class="page-title">让客人走进空间。</h1><p class="page-description">维护看房入口和展示说明，随民宿资料发布生效。</p><form id="vr-form"><label class="field">VR入口短句<input name="vrLabel" value="${esc(d.vrLabel || "身临其境，感受空间")}" maxlength="80" required></label><label class="field">VR展示说明<textarea name="vrDescription" maxlength="500" required>${esc(d.vrDescription || "走进空间，感受一间民宿。")}</textarea></label><label class="field">当前VR素材链接<input value="${esc(d.vrUrl)}" readonly><small>沿用已指定的途家／如视第三方参考案例。本轮尚未提供本店真实VR素材。</small></label><p class="notice">素材类型：第三方参考。客人页面持续标明“非当前房源实拍”，此说明不会因编辑短句而隐藏。</p><button class="btn secondary wide" type="submit">保存VR资料草稿</button></form><div style="margin-top:12px">${btn("发布已保存的资料与问答", "publish-knowledge", "wide", state.draftDirty ? "" : "disabled")}</div><a class="text-btn" href="${esc(d.vrUrl)}" target="_blank" rel="noopener noreferrer">查看当前VR素材 ${icon("external")}</a></div>`;
 	}
 	function merchantShareSection() {
-		const owned = Object.entries(workspace.properties).filter(([, p]) => p.merchantId === merchantId);
-		return `<div class="section-title"><h2>我的房源与分享</h2><span class="tag">${owned.length}处房源</span></div><p class="small muted share-intro">把房间或整院的看房页面发给客人，打开就是VR、房源资料和AI管家。</p><div class="share-properties">${owned.map(([pid, p]) => `<section class="share-property"><div class="share-property-heading"><div><h3>${esc(p.state.published.name)}</h3><span class="rental-badge">${p.rentalMode === "room" ? "按间出租" : "整院包栋"} · ${p.state.visible ? "展示中" : "暂停展示"}</span></div><button class="text-btn" data-action="rental-mode" data-property="${pid}">${icon("edit")} 设置</button></div>${shareUnits(workspace, pid).map((u) => `<div class="share-unit"><span class="share-unit-icon">${icon(p.rentalMode === "whole" ? "house" : "bed")}</span><div><strong>${esc(u.name)}</strong><p>${esc(u.description)}</p><small>VR资料已绑定 · 当前为参考案例</small><div class="share-unit-actions"><button class="text-btn" data-action="preview-unit" data-property="${pid}" data-unit="${u.id}" ${p.state.visible ? "" : "disabled"}>预览客人页面 ${icon("external")}</button><button class="btn compact secondary" data-action="share-unit" data-property="${pid}" data-unit="${u.id}" ${p.state.visible ? "" : "disabled"}>分享看房链接</button></div></div></div>`).join("")}${pid !== activePropertyId ? `<button class="text-btn" data-action="manage-property" data-property="${pid}">管理这处房源 ${icon("arrow")}</button>` : ""}</section>`).join("")}</div><p class="share-local-note">可分享默认示例房源供团队查看。资料修改与咨询记录保存在当前浏览器，不跨设备同步；微信分享卡片随后接入。</p>`;
+		const owned = Object.entries(workspace.properties).filter(([, p]) => p.merchantId === merchantId), summary = merchantPendingSummary(workspace, merchantId);
+		return `<div class="section-title"><h2>我的房源与分享</h2><span class="tag">${owned.length}处房源</span></div><p class="small muted share-intro">把房间或整院的看房页面发给客人，打开就是VR、房源资料和AI管家。</p><div class="share-properties">${owned.map(([pid, p]) => `<section class="share-property"><div class="share-property-heading"><div><h3>${esc(p.state.published.name)}</h3><span class="rental-badge">${p.rentalMode === "pending" ? "出租方式待确认" : p.rentalMode === "room" ? "按间出租" : "整院包栋"} · ${p.state.visible ? "展示中" : "暂停展示"}</span></div><button class="text-btn" data-action="rental-mode" data-property="${pid}">${icon("edit")} 设置</button></div>${p.rentalMode === "pending" ? "<p class=\"notice\">房间与出租方式待确认，暂不生成房间或整院分享链接。</p>" : ""}${shareUnits(workspace, pid).map((u) => `<div class="share-unit"><span class="share-unit-icon">${icon(p.rentalMode === "whole" ? "house" : "bed")}</span><div><strong>${esc(u.name)}</strong><p>${esc(u.description)}</p><small>VR资料已绑定 · 当前为参考案例</small><div class="share-unit-actions"><button class="text-btn" data-action="preview-unit" data-property="${pid}" data-unit="${u.id}" ${p.state.visible ? "" : "disabled"}>预览客人页面 ${icon("external")}</button><button class="btn compact secondary" data-action="share-unit" data-property="${pid}" data-unit="${u.id}" ${p.state.visible ? "" : "disabled"}>分享看房链接</button></div></div></div>`).join("")}${summary.properties.find((x) => x.propertyId === pid)?.pending ? `<p class="property-pending"><strong>待处理 ${summary.properties.find((x) => x.propertyId === pid).pending} 条咨询</strong>${pid !== activePropertyId ? `<button class="text-btn" data-action="manage-property" data-property="${pid}">进入该房源处理 ${icon("arrow")}</button>` : ""}</p>` : ""}${pid !== activePropertyId ? `<button class="text-btn" data-action="manage-property" data-property="${pid}">管理这处房源 ${icon("arrow")}</button>` : ""}</section>`).join("")}</div><p class="share-local-note">可分享默认示例房源供团队查看。资料修改与咨询记录保存在当前浏览器，不跨设备同步；微信分享卡片随后接入。</p>`;
 	}
 	function lifeMessages() {
 		return workspace.lifeChats[sessionId + ":" + currentCity().id] || [];
 	}
 	function handleExtraAction(a, b) {
-		if (a === "switch-chat" && role() === "merchant" && page() === "ticket") {
-			const unitId = state.tickets[parts()[2]]?.context?.unitId;
-			if (unitId) {
-				const u = new URL(propertyUrl(location.href, activePropertyId, "guest"));
-				u.searchParams.set("unit", unitId);
-				u.hash = "/guest/chat";
-				location.href = u.href;
+		if (a === "question-library") {
+			showDialog("清欢30个常见问题", `<p class="dialog-copy">选择问题后可继续修改，点击发送才会提问。具体店规尚未确认时由管家承接。</p><div class="question-library">${state.published.knowledge.filter((k) => k.kind === "confirmation_guide").map((k) => `<button class="fact-row" data-action="select-guide" data-knowledge="${esc(k.id)}"><span>${esc(k.question)}</span>${icon("arrow")}</button>`).join("")}</div>`);
+			return true;
+		}
+		if (a === "select-guide") {
+			const guide = state.published.knowledge.find((k) => k.id === b.dataset.knowledge && k.kind === "confirmation_guide");
+			if (guide) {
+				closeDialog();
+				goChat(guide.question);
+			}
+			return true;
+		}
+		if (a === "preview-thread") {
+			if (role() !== "merchant") {
+				toast("请从商家端回看咨询。");
 				return true;
 			}
+			try {
+				showDialog("客人原会话（只读）", originalConversationMarkup(ticketPreview(workspace, {
+					merchantId,
+					propertyId: activePropertyId,
+					ticketId: b.dataset.ticket
+				})));
+			} catch (e) {
+				toast(e.message);
+			}
+			return true;
 		}
 		if (a === "life-filter") {
 			lifeFilter = b.dataset.filter;
@@ -1888,8 +2815,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		}[t.status]}</span></span><h3>${esc(t.question)}</h3><p>${t.context?.roomId ? "关于：" + esc(state.published.rooms.find((r) => r.id === t.context.roomId)?.name || "房间") : t.context?.spaceName ? "关于：" + esc(t.context.spaceName) : "来自本店AI管家会话"}</p><span class="ticket-bottom"><span>${t.status === "replied" ? "查看人工答复" : "查看问题并回复"}</span>${icon("arrow")}</span></button>`;
 	}
 	function merchantHome() {
-		const list = pending();
-		return `<div class="merchant-header"><div class="merchant-header-top"><h1>你好，小院管家。</h1><span class="tag">商家演示</span></div><p>${esc(state.published.name)} · 接待工作台</p><div class="merchant-stats"><div><strong>${list.length}</strong><span>待人工处理</span></div><div><strong>${Object.values(state.tickets).filter((t) => t.status === "replied").length}</strong><span>已回复咨询</span></div><div><strong>${state.published.knowledge.length}</strong><span>生效问答</span></div></div></div><section class="merchant-section"><div class="section-title" style="margin-top:0"><h2>需要你确认</h2><button class="text-btn" data-action="nav" data-route="merchant/queue">全部咨询 ${icon("chevron")}</button></div>${list.length ? list.slice(0, 3).map(ticketCard).join("") : `<div class="empty-state">${icon("check")}<h2>暂时没有待处理咨询</h2><p>客人在AI对话中点击「请管家确认」后，<br>同一个问题就会出现在这里。</p><button class="text-btn" data-action="try-pets">去客人端试试 ${icon("arrow")}</button></div>`}${merchantShareSection()}<div class="section-title"><h2>维护这家民宿</h2></div><div class="merchant-links">${[
+		const list = pending(), summary = merchantPendingSummary(workspace, merchantId);
+		return `<div class="merchant-header"><div class="merchant-header-top"><h1>你好，小院管家。</h1><span class="tag">商家演示</span></div><p>${esc(state.published.name)} · 接待工作台</p><div class="merchant-stats"><div><strong>${summary.total}</strong><span>本商家待处理</span></div><div><strong>${Object.values(state.tickets).filter((t) => t.status === "replied").length}</strong><span>本房源已回复</span></div><div><strong>${state.published.knowledge.length}</strong><span>可用问答/指引</span></div></div></div><section class="merchant-section"><div class="section-title" style="margin-top:0"><h2>当前房源待办</h2><button class="text-btn" data-action="nav" data-route="merchant/queue">全部咨询 ${icon("chevron")}</button></div><p class="small muted queue-scope">当前：${esc(state.published.name)} · ${list.length} 条待处理${summary.total > list.length ? `；其他房源还有 ${summary.total - list.length} 条，请在下方房源列表处理。` : ""}</p>${list.length ? list.slice(0, 3).map(ticketCard).join("") : `<div class="empty-state">${icon("check")}<h2>当前房源暂无待处理咨询</h2><p>客人在AI对话中点击「请管家确认」后，<br>同一个问题就会出现在这里。</p><button class="text-btn" data-action="try-pets">去客人端试试 ${icon("arrow")}</button></div>`}${merchantShareSection()}<div class="section-title"><h2>维护这家民宿</h2></div><div class="merchant-links">${[
 			[
 				"editor",
 				"edit",
@@ -1912,7 +2839,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	function queue() {
 		const tickets = Object.values(state.tickets).filter((t) => queueFilter === "all" || t.status === queueFilter).sort((a, b) => b.createdAt - a.createdAt);
-		return `<div class="page-pad"><h1 class="page-title">人工咨询</h1><p class="page-description">AI交接过来的问题，按原会话回复。</p><div class="queue-filter">${[
+		return `<div class="page-pad"><h1 class="page-title">人工咨询</h1><p class="page-description">${esc(state.published.name)} · 当前房源咨询，按原会话回复。其他房源待办可从接待工作台查看。</p><div class="queue-filter">${[
 			["all", "全部"],
 			["pending", "待接手"],
 			["processing", "处理中"],
@@ -1923,11 +2850,11 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		const t = state.tickets[parts()[2]];
 		if (!t) return "<div class=\"page-pad\">咨询不存在，请返回工作台。</div>";
 		const a = state.threads[t.threadId]?.messages.find((m) => m.id === t.messageId);
-		return `<div class="page-pad"><p class="reply-label">客人的原问题 · ${time(t.createdAt)}</p><div class="reply-question">${esc(t.question)}</div><p class="reply-ai"><strong>AI此前的答复</strong><br>${esc(a?.body || "暂无记录").replace(/\n/g, "<br>")}</p><div class="panel-line"><span>人工处理状态</span><span class="status-tag ${t.status === "replied" ? "done" : ""}">${{
+		return `<div class="page-pad"><p class="notice">${esc(state.published.name)} · ${esc(t.context?.roomId ? state.published.rooms.find((r) => r.id === t.context.roomId)?.name || "原房间" : t.context?.unitId === "whole" ? "整院包栋" : "本房源咨询")}</p><p class="reply-label">客人的原问题 · ${time(t.createdAt)}</p><div class="reply-question">${esc(t.question)}</div><p class="reply-ai"><strong>AI此前的答复</strong><br>${esc(a?.body || "暂无记录").replace(/\n/g, "<br>")}</p><div class="panel-line"><span>人工处理状态</span><span class="status-tag ${t.status === "replied" ? "done" : ""}">${{
 			pending: "待接手",
 			processing: "处理中",
 			replied: "已回复"
-		}[t.status]}</span></div>${t.status === "replied" ? `<div class="section-title"><h2>已发送的人工答复</h2></div><p class="reply-question">${esc(t.reply.body)}</p><p class="notice">已回到客人的原会话。这条人工答复没有自动成为公开知识。</p>${btn("整理为公开问答", "ticket-knowledge", "secondary wide", `data-ticket="${t.id}"`)}<button class="text-btn" data-action="switch-chat">回客人端看回复 ${icon("arrow")}</button>` : `${t.status === "pending" ? `<div style="margin-top:18px">${btn("接手这条咨询", "accept", "secondary wide", `data-ticket="${t.id}"`)}</div>` : ""}<form id="reply-form" class="reply-form" data-ticket="${t.id}"><label class="field">给这位客人的回复<textarea id="reply-body" name="reply" placeholder="根据实际情况回复这位客人…" maxlength="1000" required></textarea><small>发送后显示为“民宿管家 · 人工回复”，仅进入此会话。</small></label><button class="btn wide" type="submit">发送人工答复 ${icon("arrow")}</button></form>`}</div>`;
+		}[t.status]}</span></div>${t.status === "replied" ? `<div class="section-title"><h2>已发送的人工答复</h2></div><p class="reply-question">${esc(t.reply.body)}</p><p class="notice">已回到客人的原会话。这条人工答复没有自动成为公开知识。</p>${btn("整理为公开问答", "ticket-knowledge", "secondary wide", `data-ticket="${t.id}"`)}<button class="text-btn" data-action="preview-thread" data-ticket="${t.id}">查看客人原会话（只读） ${icon("arrow")}</button>` : `${t.status === "pending" ? `<div style="margin-top:18px">${btn("接手这条咨询", "accept", "secondary wide", `data-ticket="${t.id}"`)}</div>` : ""}<form id="reply-form" class="reply-form" data-ticket="${t.id}"><label class="field">给这位客人的回复<textarea id="reply-body" name="reply" placeholder="根据实际情况回复这位客人…" maxlength="1000" required></textarea><small>发送后显示为“民宿管家 · 人工回复”，仅进入此会话。</small></label><button class="btn wide" type="submit">发送人工答复 ${icon("arrow")}</button></form>`}</div>`;
 	}
 	function editor() {
 		const d = editorCache || state.draft;
@@ -1968,7 +2895,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	function knowledge() {
 		const ks = state.draft.knowledge;
-		return `<div class="page-pad"><h1 class="page-title">常问的问题，认真回答。</h1><p class="page-description">适合所有客人的问题和答案，编辑后再公开。</p><p class="version-line">已生效 ${state.published.knowledge.length} 条 · 草稿 ${ks.length} 条${state.draftDirty ? " · 有未发布修改" : ""}</p>${btn(icon("plus") + " 新增公开问答", "new-knowledge", "secondary wide")}${ks.length ? ks.map((k) => `<article class="knowledge-item"><h3>${esc(k.question)}</h3><p>${esc(k.text)}</p>${k.aliases.length ? `<p>相似问法：${k.aliases.map(esc).join("、")}</p>` : ""}<div style="display:flex;justify-content:space-between"><button class="text-btn" data-action="edit-knowledge" data-knowledge="${k.id}">${icon("edit")} 编辑问答</button><button class="text-btn" data-action="delete-knowledge" data-knowledge="${k.id}">删除</button></div></article>`).join("") : `<div class="empty-state">${icon("book")}<h2>还没有额外的公开问答</h2><p>厨房、停车、入住规则已从民宿资料回答。<br>其他高频问题，可从这里添加。</p></div>`}<p class="notice">保存后仍是草稿。明确发布后，AI才会在新提问中使用；历史对话保留原答复。</p>${btn("发布已保存的资料与问答", "publish-knowledge", "wide", state.draftDirty ? "" : "disabled")}<button class="text-btn" data-action="nav" data-route="merchant/editor">查看民宿资料草稿 ${icon("arrow")}</button></div>`;
+		return `<div class="page-pad"><h1 class="page-title">常问的问题，认真回答。</h1><p class="page-description">适合所有客人的问题和答案，编辑后再公开。</p><p class="version-line">${state.published.profilePending ? `接待指引 ${state.published.knowledge.filter((k) => k.requiresHuman !== false && k.kind === "confirmation_guide").length} 条 · 已确认公开答复 ${state.published.knowledge.filter((k) => k.requiresHuman === false || k.kind !== "confirmation_guide").length} 条` : `已生效 ${state.published.knowledge.length} 条`} · 草稿 ${ks.length} 条${state.draftDirty ? " · 有未发布修改" : ""}</p>${btn(icon("plus") + " 新增公开问答", "new-knowledge", "secondary wide")}${ks.length ? ks.map((k) => `<article class="knowledge-item"><h3>${esc(k.question)}</h3>${k.kind === "confirmation_guide" ? `<p class="tag">${esc(k.id)} · ${k.requiresHuman !== false ? "接待指引，店规待确认" : "商家已确认公开答复"}</p>` : ""}<p>${esc(k.text)}</p>${k.aliases.length ? `<p>相似问法：${k.aliases.map(esc).join("、")}</p>` : ""}<div style="display:flex;justify-content:space-between"><button class="text-btn" data-action="edit-knowledge" data-knowledge="${k.id}">${icon("edit")} 编辑问答</button><button class="text-btn" data-action="delete-knowledge" data-knowledge="${k.id}">删除</button></div></article>`).join("") : `<div class="empty-state">${icon("book")}<h2>还没有额外的公开问答</h2><p>厨房、停车、入住规则已从民宿资料回答。<br>其他高频问题，可从这里添加。</p></div>`}<p class="notice">保存后仍是草稿。明确发布后，AI才会在新提问中使用；历史对话保留原答复。</p>${btn("发布已保存的资料与问答", "publish-knowledge", "wide", state.draftDirty ? "" : "disabled")}<button class="text-btn" data-action="nav" data-route="merchant/editor">查看民宿资料草稿 ${icon("arrow")}</button></div>`;
 	}
 	function knowledgeEditor() {
 		const k = knowledgeCache || {
@@ -1976,7 +2903,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			text: "",
 			aliases: []
 		};
-		return `<div class="page-pad"><h1 class="page-title">整理一条公开问答</h1><p class="page-description">请编辑为适合所有客人阅读的规则，去掉个人信息和单次特殊承诺。</p><form id="knowledge-form"><label class="field">客人会怎么问<input id="knowledge-question" name="question" maxlength="200" value="${esc(k.question)}" placeholder="例如：可以带宠物吗" required></label><label class="field">可以公开的答案<textarea id="knowledge-answer" name="answer" maxlength="1000" required placeholder="请按本店实际规则填写…" style="min-height:170px">${esc(k.text)}</textarea></label><label class="field">其他相似问法<textarea id="knowledge-aliases" name="aliases" placeholder="每行一个，最多5个">${esc((k.aliases || []).join("\n"))}</textarea><small>本地演示按完整问题或这些问法匹配；不是通用大模型。</small></label><p class="notice warning">厨房、停车等已有使用规则优先。若需调整，请编辑民宿资料中的对应规则。</p><button class="btn wide" type="submit">保存问答草稿</button></form></div>`;
+		return `<div class="page-pad"><h1 class="page-title">整理一条公开问答</h1><p class="page-description">请编辑为适合所有客人阅读的规则，去掉个人信息和单次特殊承诺。</p><form id="knowledge-form"><label class="field">客人会怎么问<input id="knowledge-question" name="question" maxlength="200" value="${esc(k.question)}" placeholder="例如：可以带宠物吗" required></label><label class="field">可以公开的答案<textarea id="knowledge-answer" name="answer" maxlength="1000" required placeholder="请按本店实际规则填写…" style="min-height:170px">${esc(k.text)}</textarea></label><label class="field">其他相似问法<textarea id="knowledge-aliases" name="aliases" placeholder="每行一个，最多5个">${esc((k.aliases || []).join("\n"))}</textarea><small>本地演示按完整问题或这些问法匹配；不是通用大模型。</small></label><p class="notice warning">厨房、停车等已有使用规则优先。若需调整，请编辑民宿资料中的对应规则。</p>${k.kind === "confirmation_guide" ? `<label class="field guide-confirm"><span><input type="checkbox" name="still-needs-confirmation" ${k.requiresHuman !== false ? "checked" : ""}> 答复仍需管家确认</span><small>只有已核实本房源规则、适用条件和对客范围后，才取消勾选。保存后仍须明确发布。</small></label>` : ""}<button class="btn wide" type="submit">保存问答草稿</button></form></div>`;
 	}
 	function platform() {
 		return `<div class="page-pad"><h1 class="page-title">支持商家，把服务做好。</h1><p class="page-description">管理入口留在后台，客人从民宿首页直接开始。</p><button class="btn secondary wide" data-action="nav" data-route="platform/activities">${icon("pin")} 大理本地活动管理</button><p class="version-line" style="margin-top:12px">本地生活AI：演示模式 · 真实国内AI接口待接入</p><div class="platform-intro"><h2>${esc(state.published.name)}</h2><p>虚构商家 · 示例房源 songjian-demo<br>展示状态：${state.visible ? "对客人展示中" : "已暂停展示"}<br>当前公开资料：V${state.published.version}</p></div><div class="support-summary"><div><strong>${Object.keys(state.threads).length}</strong><span>演示咨询会话</span></div><div><strong>${pending().length}</strong><span>待人工处理</span></div></div><div class="panel-line"><div><strong>房源展示</strong><p>${state.visible ? "客人可看房和提问。" : "客人保留历史，不能发起新咨询。"}</p></div>${btn(state.visible ? "暂停展示" : "恢复展示", "visibility", "secondary compact")}</div><div class="panel-line"><div><strong>公开问答</strong><p>${state.published.knowledge.length}条生效 · 草稿${state.draft.knowledge.length}条</p></div><span class="tag">V${state.published.version}</span></div><div class="panel-line"><div><strong>资料草稿</strong><p>${state.draftDirty ? "有保存尚未发布的修改" : "与当前公开资料一致"}</p></div><button class="text-btn" data-action="nav" data-route="merchant/editor">查看 ${icon("chevron")}</button></div><div class="panel-line"><div><strong>人工服务</strong><p>真实演示操作生成，没有伪造待办。</p></div><button class="text-btn" data-action="nav" data-route="merchant/queue">咨询列表 ${icon("chevron")}</button></div><p class="notice">平台只提供本地演示管理。本次没有接入真实身份、审核团队、模型服务或外部通知。</p>${btn(icon("external") + " 导出演示数据备份", "export", "outline wide")}<button class="text-btn" data-action="reset">${icon("refresh")} 恢复初始示例</button></div>`;
@@ -2112,7 +3039,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		if (a === "sources") {
 			const m = state.threads[b.dataset.thread]?.messages.find((m) => m.id === b.dataset.message);
 			if (!m) return;
-			showDialog("这条答复的资料依据", `<p class="small muted">${m.sources[0]?.version !== state.published.version ? "资料已有新版本，以下保留当时回答所使用的依据。" : "只引用本民宿已公开资料。"}</p>${m.sources.map((s) => `<section class="source-detail"><h3>${esc(s.label)}</h3><p>${esc(s.text)}</p><small>本店公开资料 V${s.version} · ${esc(s.key)}</small></section>`).join("")}`);
+			showDialog("这条答复的资料依据", `<p class="small muted">${m.sources[0]?.version !== state.published.version ? "资料已有新版本，以下保留当时回答所使用的依据。" : "只引用本民宿已公开资料。"}</p>${m.sources.map((s) => `<section class="source-detail"><h3>${esc(s.label)}</h3><p>${esc(s.text)}</p><small>${s.kind === "confirmation_guide" ? `${esc(s.sourceLabel || s.label)} · ${esc(s.sourceRange || "")} · ${s.requiresHuman ? "接待指引，店规待确认" : "商家已确认答复"}` : "本店公开资料"} · V${s.version}</small></section>`).join("")}`);
 			return;
 		}
 		if (a === "handoff") {
@@ -2223,7 +3150,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			return;
 		}
 		if (a === "vr-settings") {
-			showDialog("VR资料", `<p class="dialog-copy">当前素材类型：第三方参考案例\n\n${esc(state.draft.vrUrl)}\n\n来源：途家 / 如视\n\n此案例只演示全景体验，不与松间小院房间、设施绑定。当前尚未提供本店真实VR素材。</p><a class="btn secondary wide" style="margin-top:20px" href="${esc(state.draft.vrUrl)}" target="_blank" rel="noopener noreferrer">查看指定VR参考 ${icon("external")}</a>`);
+			showDialog("VR资料", `<p class="dialog-copy">当前素材类型：第三方参考案例\n\n${esc(state.draft.vrUrl)}\n\n来源：途家 / 如视\n\n此案例只演示全景体验，不与当前民宿房间、设施绑定。当前尚未提供本店真实VR素材。</p><a class="btn secondary wide" style="margin-top:20px" href="${esc(state.draft.vrUrl)}" target="_blank" rel="noopener noreferrer">查看指定VR参考 ${icon("external")}</a>`);
 			return;
 		}
 		if (a === "visibility") {
@@ -2364,6 +3291,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			if (mutate({
 				type: "SAVE_KNOWLEDGE",
 				knowledgeId: knowledgeCache?.id,
+				...knowledgeCache?.kind === "confirmation_guide" ? { requiresHuman: f.has("still-needs-confirmation") } : {},
 				question: String(f.get("question")),
 				text: String(f.get("answer")),
 				aliases: String(f.get("aliases")).split("\n").map((x) => x.trim()).filter(Boolean)
