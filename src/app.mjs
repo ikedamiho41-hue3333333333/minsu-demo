@@ -310,7 +310,7 @@ document.addEventListener('click',e=>{
  if(a==='photo'){
   showDialog(b.dataset.label,`<div class="photo-dialog">${photo(b.dataset.scene)}<p class="small muted">AI生成的空间氛围示意，不是房源实拍。</p></div>`);return;
  }
- 
+
  if(a==='sources'){
   const m=state.threads[b.dataset.thread]?.messages.find(m=>m.id===b.dataset.message);
   if(!m)return;showDialog('这条答复的资料依据',`<p class="small muted">${m.sources[0]?.version!==state.published.version?'资料已有新版本，以下保留当时回答所使用的依据。':'只引用本民宿已公开资料。'}</p>${m.sources.map(s=>`<section class="source-detail"><h3>${esc(s.label)}</h3><p>${esc(s.text)}</p><small>${s.kind==='confirmation_guide'?`${esc(s.sourceLabel||s.label)} · ${esc(s.sourceRange||'')} · ${s.requiresHuman?'接待指引，店规待确认':'商家已确认答复'}`:'本店公开资料'} · V${s.version}</small></section>`).join('')}`);return;

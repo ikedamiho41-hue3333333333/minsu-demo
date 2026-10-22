@@ -13,4 +13,3 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
   }
  });
 }
-
