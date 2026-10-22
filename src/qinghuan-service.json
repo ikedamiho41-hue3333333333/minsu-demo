@@ -1,0 +1,427 @@
+{
+  "version": "0.4.3",
+  "propertyId": "qinghuan-dali",
+  "notice": "内部资料预览，全部建议待店方确认。原表中的时效、赔付额度、巡检、自动推送与派单均为策划候选，不代表已开通、已授权或已执行。责任岗位与整改优先级来自原表，未形成真实派工或整改任务。",
+  "items": [
+    {
+      "id": "Q01",
+      "phase": "入住前",
+      "question": "从机场/高铁站怎么到院子？能安排接站吗？",
+      "internalActionSummary": "原表策划建议：到店前自动推送「一码通」电子指南：导航一键启动、3条到店路线图文、接站报价表、24h紧急电话；拼车排期表共享文档降本",
+      "roleCandidate": "管家",
+      "priority": "P0",
+      "confirmationChecklist": "机场/车站与本店的准确定位、推荐交通、参考车程及有效日期；是否提供接站、费用口径、预约与承接人、服务时段。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A4:O4"
+      }
+    },
+    {
+      "id": "Q02",
+      "phase": "入住前",
+      "question": "小区楼栋多、路复杂，到了怎么找到房间？",
+      "internalActionSummary": "原表策划建议：「找房三件套」：从214国道入口拍到房门的实景路书视频 + 入住日玄关/楼栋提前亮灯 + 密码与地图双通道；管家不再电话远程指路",
+      "roleCandidate": "管家",
+      "priority": "P0",
+      "confirmationChecklist": "本店/出租单元对应的小区入口、楼栋/门牌、白天和夜间路书、可用导航点、门禁获取方式及迷路联系入口。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A5:O5"
+      }
+    },
+    {
+      "id": "Q03",
+      "phase": "入住前",
+      "question": "自驾好停车吗？收费吗？有充电桩吗？",
+      "internalActionSummary": "原表策划建议：平台标签前置「免费停车/代客泊车」+ 停车实拍图入电子指南；充电需求提前登记排期，避免到店后协调",
+      "roleCandidate": "管家",
+      "priority": "P1",
+      "confirmationChecklist": "本店可使用的停车场、收费/免费适用范围、入场规则、是否代客泊车；充电设施是否真实存在、位置及预约方式。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A6:O6"
+      }
+    },
+    {
+      "id": "Q04",
+      "phase": "入住前",
+      "question": "能提前入住或延迟退房吗？",
+      "internalActionSummary": "原表策划建议：房态共享日历自助查「可早入/可晚退」时段；行李寄存牌流程化，管家只处理例外",
+      "roleCandidate": "管家/保洁",
+      "priority": "P1",
+      "confirmationChecklist": "本店标准入住/退房时刻、早到/晚退条件与费用、行李寄存规则、房态及保洁的实际确认渠道。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A7:O7"
+      }
+    },
+    {
+      "id": "Q05",
+      "phase": "入住前",
+      "question": "除房费外还有押金、清洁费吗？退改规则是什么？",
+      "internalActionSummary": "原表策划建议：「费用一页纸」随确认短信自动下发；下单前弹窗列明全部收费项，把争议消灭在成交前",
+      "roleCandidate": "运营/管家",
+      "priority": "P0",
+      "confirmationChecklist": "房费之外实际存在的押金、清洁费、超时费、收费条件；订单渠道对应的退改条款、退款路径与时效。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A8:O8"
+      }
+    },
+    {
+      "id": "Q06",
+      "phase": "入住前",
+      "question": "能带宠物吗？有什么要求？",
+      "internalActionSummary": "原表策划建议：预订页宠物标签化；宠物入住包（尿垫/湿巾/食盆）标准化配置，押金规则写进确认函",
+      "roleCandidate": "管家/保洁",
+      "priority": "P2",
+      "confirmationChecklist": "清欢是否接待宠物、允许的品种/体型/数量、适用房源、押金/清洁费、行为要求及需提前确认的条件。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A9:O9"
+      }
+    },
+    {
+      "id": "Q07",
+      "phase": "入住前",
+      "question": "含早餐吗？可以自己做饭吗？",
+      "internalActionSummary": "原表策划建议：早餐「一码通」订餐；厨房时段预约制+清洁checklist，杜绝共享设施冲突",
+      "roleCandidate": "管家/餐饮",
+      "priority": "P1",
+      "confirmationChecklist": "是否含早及适用订单、早餐供应者/地点/时段/价格；本店厨房是否可用、设施用品、预约与清洁责任。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A10:O10"
+      }
+    },
+    {
+      "id": "Q08",
+      "phase": "入住前",
+      "question": "房间图片和实际一致吗？会不会照骗？",
+      "internalActionSummary": "原表策划建议：实拍视频替代精修图上架；主动披露短板文案；承诺入住30分钟无理由换房",
+      "roleCandidate": "运营",
+      "priority": "P0",
+      "confirmationChecklist": "每个房型/出租单元的实际图文/VR对应关系、拍摄日期、景观与楼层、已知短板；是否有换房政策及执行条件。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A11:O11"
+      }
+    },
+    {
+      "id": "Q09",
+      "phase": "入住前",
+      "question": "有空调/取暖吗？雨季潮不潮、冬天冷不冷？",
+      "internalActionSummary": "原表策划建议：电子指南按季节自动推送「当季舒适提示」；潮湿楼层标配除湿设备，预期前置管理",
+      "roleCandidate": "管家",
+      "priority": "P1",
+      "confirmationChecklist": "各出租单元实际空调、取暖/除湿设备及使用方法；楼层季节性情况、可借物品与服务时段。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A12:O12"
+      }
+    },
+    {
+      "id": "Q10",
+      "phase": "入住前",
+      "question": "能开发票吗？怎么开？",
+      "internalActionSummary": "原表策划建议：退房时扫码自助填开票信息，系统自动开具并推送，零人工介入",
+      "roleCandidate": "运营/财务",
+      "priority": "P2",
+      "confirmationChecklist": "本店是否可开及由谁开、可开项目/金额、申请信息、申请入口、渠道限制与承诺时效。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A13:O13"
+      }
+    },
+    {
+      "id": "Q11",
+      "phase": "入住中",
+      "question": "突然停水停电怎么办？找谁？多久能修？",
+      "internalActionSummary": "原表策划建议：应急SOP卡片（停水/停电/漏水三张）；入住日水电预检拍照；常备桶装水应急包，把突发变有准备",
+      "roleCandidate": "管家/维修",
+      "priority": "P0",
+      "confirmationChecklist": "停水/停电/漏水的实际应急流程、当班/维修/物业渠道、可提供的替代安排、通知方式与补偿授权。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A14:O14"
+      }
+    },
+    {
+      "id": "Q12",
+      "phase": "入住中",
+      "question": "热水出水慢、忽冷忽热怎么解决？",
+      "internalActionSummary": "原表策划建议：硬件改造：增压花洒/热水循环/水温标定；房间贴「热水使用提示卡」；报修工单直达维修，管家只跟进结果",
+      "roleCandidate": "管家/维修",
+      "priority": "P0",
+      "confirmationChecklist": "本房热水设备类型、开关及等待/温度提示、可用说明图、故障判断、报修渠道和实际响应规则。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A15:O15"
+      }
+    },
+    {
+      "id": "Q13",
+      "phase": "入住中",
+      "question": "WiFi连不上/网速慢怎么办？",
+      "internalActionSummary": "原表策划建议：全屋Mesh组网改造；密码做成桌卡+一码通双通道；指南内标注实测网速管理预期",
+      "roleCandidate": "管家/维修",
+      "priority": "P1",
+      "confirmationChecklist": "各单元网络覆盖、设备可执行的排查步骤、故障联系人；WiFi凭据的授权获取入口及可见范围。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A16:O16"
+      }
+    },
+    {
+      "id": "Q14",
+      "phase": "入住中",
+      "question": "房间有蜘蛛、蚊虫怎么办？",
+      "internalActionSummary": "原表策划建议：入住前「虫害预防三件套」（蚊香液/电蚊拍/纱窗检查）；庭院定期驱蚊喷洒排期表；床品深度清洁SOP",
+      "roleCandidate": "管家/保洁",
+      "priority": "P1",
+      "confirmationChecklist": "本店防虫物资及位置、可提供的清洁/除虫处理、联系时段、换房或补偿的批准条件。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A17:O17"
+      }
+    },
+    {
+      "id": "Q15",
+      "phase": "入住中",
+      "question": "卫生没打扫、垃圾没人倒怎么办？",
+      "internalActionSummary": "原表策划建议：连住客人「打扫日历」扫码自助预约；保洁拍照打卡制；垃圾不超2/3巡检制（每日3次）",
+      "roleCandidate": "保洁/管家",
+      "priority": "P0",
+      "confirmationChecklist": "一客一扫或连住打扫政策、免费/收费范围、预约提前量、保洁时段、垃圾清运与补扫渠道。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A18:O18"
+      }
+    },
+    {
+      "id": "Q16",
+      "phase": "入住中",
+      "question": "晚上小区路灯暗、独自回家安全吗？",
+      "internalActionSummary": "原表策划建议：向物业提交照明盲区清单推动整改；管家夜间动线亮灯试点；指南内置安全提示+保安室电话",
+      "roleCandidate": "管家/物业联动",
+      "priority": "P1",
+      "confirmationChecklist": "真实可走夜间路线、照明情况、安全联系/物业渠道、值班时段，是否能陪同或借手电。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A19:O19"
+      }
+    },
+    {
+      "id": "Q17",
+      "phase": "入住中",
+      "question": "共享厨房/洗衣机被其他客人占用怎么办？",
+      "internalActionSummary": "原表策划建议：共享设施扫码预约排期表（时段可视化）；短租客优先原则；逐步一房一机配置",
+      "roleCandidate": "管家",
+      "priority": "P1",
+      "confirmationChecklist": "哪些设施实际共享、适用住客、可用时段、预约/排队方法、冲突处理与替代方案。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A20:O20"
+      }
+    },
+    {
+      "id": "Q18",
+      "phase": "入住中",
+      "question": "隔音怎么样？小区晚上吵吗？",
+      "internalActionSummary": "原表策划建议：耳塞入「安心包」；房源文案如实标注；小区活动提前一天群预告",
+      "roleCandidate": "管家",
+      "priority": "P2",
+      "confirmationChecklist": "各房型隔音/临街/活动影响的如实说明、安静时段、耳塞是否可提供、噪音投诉渠道。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A21:O21"
+      }
+    },
+    {
+      "id": "Q19",
+      "phase": "入住中",
+      "question": "周边怎么玩？有本地攻略和推荐吗？",
+      "internalActionSummary": "原表策划建议：「南区电子攻略」一码通：3条一日游路线+餐厅红灰榜+交通卡；AI客服基于知识库秒答延伸问题",
+      "roleCandidate": "管家",
+      "priority": "P1",
+      "confirmationChecklist": "先整合攻略66条及主题新增点位的有效资料；本店可否代订、收费与联系方法；客人当次偏好、人数及可用时间。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A22:O22"
+      }
+    },
+    {
+      "id": "Q20",
+      "phase": "入住中",
+      "question": "衣服怎么洗？有烘干吗？",
+      "internalActionSummary": "原表策划建议：扫码解锁洗衣房+烘干排期；连住客人洗衣指南一页纸",
+      "roleCandidate": "保洁/管家",
+      "priority": "P2",
+      "confirmationChecklist": "本房/公共洗衣设施的位置、可用机型、洗涤用品、使用/收费规则；烘干是否存在、时段与雨天处理办法。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A23:O23"
+      }
+    },
+    {
+      "id": "Q21",
+      "phase": "退房后",
+      "question": "押金什么时候退？怎么退？",
+      "internalActionSummary": "原表策划建议：承诺写入确认函；系统自动退款触发；损坏争议以入住时房间视频留证裁定",
+      "roleCandidate": "运营/财务",
+      "priority": "P0",
+      "confirmationChecklist": "是否收押金、金额/支付渠道、查房流程、原路退回条件、到账时效、查询与争议入口。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A24:O24"
+      }
+    },
+    {
+      "id": "Q22",
+      "phase": "退房后",
+      "question": "退房超时了怎么收费？能延到下午吗？",
+      "internalActionSummary": "原表策划建议：退房前1天自动推送「弹性退房」自助申请（对接次日房态）；行李寄存兜底",
+      "roleCandidate": "管家",
+      "priority": "P1",
+      "confirmationChecklist": "各渠道/房型超时收费、阶梯边界、宽限条件、晚退申请截止时间、实际房态确认和寄存替代。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A25:O25"
+      }
+    },
+    {
+      "id": "Q23",
+      "phase": "退房后",
+      "question": "东西落在房间怎么办？能寄回吗？",
+      "internalActionSummary": "原表策划建议：遗留物检查清单卡+拍照模板；快递合作月结价；客人扫码登记申领，全程零电话",
+      "roleCandidate": "保洁/管家",
+      "priority": "P1",
+      "confirmationChecklist": "遗留物联系/登记入口、查找范围与时段、认领核验方式、保管期限、邮寄费用与快递处理规则。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A26:O26"
+      }
+    },
+    {
+      "id": "Q24",
+      "phase": "退房后",
+      "question": "厨房没清理/房间弄脏会被扣费吗？标准是什么？",
+      "internalActionSummary": "原表策划建议：「深度清洁费价目表」入确认函；入住时房间状态照片作基线；争议以照片比对裁定",
+      "roleCandidate": "管家/保洁",
+      "priority": "P1",
+      "confirmationChecklist": "本店深度清洁费的适用情形/价目、正常使用界限、事前告知与争议处理方式、证据保管规则。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A27:O27"
+      }
+    },
+    {
+      "id": "Q25",
+      "phase": "退房后",
+      "question": "发票多久开出来？开错了怎么办？",
+      "internalActionSummary": "原表策划建议：自助开票小程序+重开工单24小时响应闭环",
+      "roleCandidate": "运营/财务",
+      "priority": "P2",
+      "confirmationChecklist": "实际开票时效、进度查询、错误更正/重开流程、是否收费、办理主体与承接渠道。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A28:O28"
+      }
+    },
+    {
+      "id": "Q26",
+      "phase": "退房后",
+      "question": "退房后能帮忙叫车/送站吗？",
+      "internalActionSummary": "原表策划建议：退房前1天问约车；拼车排期表摊薄成本；与固定司机长期合作价",
+      "roleCandidate": "管家",
+      "priority": "P2",
+      "confirmationChecklist": "是否提供送站、实际合作司机/联系归口、费用与预约规则、拼车条件、服务时段及人数/行李限制。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A29:O29"
+      }
+    },
+    {
+      "id": "Q27",
+      "phase": "退房后",
+      "question": "对服务不满意找谁？有补偿吗？",
+      "internalActionSummary": "原表策划建议：差评24小时黄金响应SOP；补偿额度授权管家现场决断（如50元内）；月度客诉复盘会",
+      "roleCandidate": "管家/主理人",
+      "priority": "P0",
+      "confirmationChecklist": "投诉受理渠道、当班/升级责任、可确认的响应时效、补偿权限与记录方式。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A30:O30"
+      }
+    },
+    {
+      "id": "Q28",
+      "phase": "退房后",
+      "question": "下次来有老客优惠吗？怎么订？",
+      "internalActionSummary": "原表策划建议：离店24小时自动感谢消息+再访优惠券；会员群运营；手机号为键的客户档案（一码通）",
+      "roleCandidate": "运营/管家",
+      "priority": "P1",
+      "confirmationChecklist": "是否确有老客权益、折扣/升房/礼品具体规则、有效期、适用房源/渠道、核验和预订入口。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A31:O31"
+      }
+    },
+    {
+      "id": "Q29",
+      "phase": "退房后",
+      "question": "设施损坏被要求赔偿怎么界定？",
+      "internalActionSummary": "原表策划建议：入住时引导「3分钟房间视频」自助留证；物品损坏价目表公示；双向保护减少扯皮",
+      "roleCandidate": "管家",
+      "priority": "P1",
+      "confirmationChecklist": "本店损坏判定与正常损耗界限、已公示价目、入住状态留证方式、复核/争议渠道及授权人。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A32:O32"
+      }
+    },
+    {
+      "id": "Q30",
+      "phase": "退房后",
+      "question": "退房后有问题还能找到管家吗？",
+      "internalActionSummary": "原表策划建议：离店后自动推送「售后卡」（电话+微信+常见问题链接）；夜间咨询AI客服托管",
+      "roleCandidate": "管家/运营",
+      "priority": "P1",
+      "confirmationChecklist": "实际售后电话/微信或页面入口、服务时段、夜间和紧急情况的真实承接渠道、问题分级与交接方式。",
+      "status": "pending_confirmation",
+      "sourceRef": {
+        "file": "大理小院子南区民宿管家服务30问.xlsx",
+        "location": "30问总表!A33:O33"
+      }
+    }
+  ]
+}
