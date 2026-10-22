@@ -125,3 +125,75 @@ body.mobile-presentation{background:#e9eee7;font-size:15px;overflow:hidden;-webk
 .question-library .fact-row{font-size:15px;line-height:1.7;gap:12px}
 .question-library .fact-row span{flex:1}
 .mobile-presentation .amenities button.amenity{font-size:14px}
+
+/* Source-backed Qinghuan previews extend the existing reading and reception flows. */
+.content-library,.content-detail{font-size:15px;line-height:1.85}
+.content-ai-launch{background:var(--green-soft);margin:18px 0;color:var(--green-deep)}
+.content-ai-launch small{color:#455b49}
+.content-notice{margin:18px 0}
+.content-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:24px 0 20px}
+.content-tabs button{min-height:44px;padding:9px 8px;border-radius:8px;background:var(--ground);font-size:14px;color:#465a4c}
+.content-tabs button.active{background:var(--green);color:#fff;font-weight:600}
+.content-tabs button:hover:not(.active){background:#e2e9dd}
+.content-search .field{margin-bottom:12px}
+.content-search input,.content-search select{width:100%;min-width:0;border:1px solid #aab8a6;border-radius:9px;background:var(--paper);padding:10px;font-size:16px;min-height:46px;color:var(--ink)}
+.content-search-bottom{display:flex;gap:12px;align-items:flex-end}
+.content-search-bottom label{flex:1;min-width:0;display:grid;gap:5px;font-size:13px;color:#465a4c}
+.content-search-bottom .btn{flex:none;min-height:46px}
+.content-count,.content-intro{font-size:13px;color:#4c5f50;margin:18px 0;line-height:1.85}
+.content-list{border-top:1px solid var(--line);margin:16px 0 20px}
+.content-row{display:flex;align-items:center;gap:12px;text-align:left;background:transparent;width:100%;min-width:0;padding:18px 2px;border-bottom:1px solid var(--line);line-height:1.8}
+.content-row>span{flex:1;min-width:0}
+.content-row strong,.content-row small,.content-row span span,.content-row em{display:block;overflow-wrap:anywhere}
+.content-row strong{font-size:16px;font-weight:600;margin:3px 0;color:var(--green-deep)}
+.content-row small{font-size:12px;color:#53654f}
+.content-row span span{font-size:14px;color:#4d5d50}
+.content-row em{font-size:12px;font-style:normal;color:#755817;margin-top:7px}
+.content-row>.icon{width:17px;height:17px;color:var(--green)}
+.content-row:hover,.content-stop:hover{background:var(--green-soft)}
+.content-handbook-link{margin-top:18px;line-height:1.8;text-align:left}
+.content-section{margin:28px 0}
+.content-section h2,.service-ticket>h2{font-size:17px;line-height:1.7;margin-bottom:10px}
+.content-section ul{padding-left:21px;margin:10px 0}
+.content-section li+li{margin-top:10px}
+.content-pending{color:#755817;background:#fbf2dc;margin:12px 0 4px}
+.content-lead-copy{margin:16px 0;color:#465a4c}
+.content-detail .detail-grid{margin:24px 0}
+.content-detail .detail-grid>div{min-width:0}
+.content-detail .detail-grid dt{font-size:13px;color:#52634f}
+.content-detail .detail-grid dd{font-size:15px;line-height:1.85;overflow-wrap:anywhere}
+.content-itinerary{padding-left:24px;margin:24px 0}
+.content-itinerary li{padding:0 0 22px 5px}
+.content-itinerary li::marker{color:var(--green);font-weight:600}
+.content-itinerary li:last-child{padding-bottom:0}
+.content-time{display:block;font-size:13px;color:#53654f;margin-bottom:4px}
+.content-stop{display:flex;width:100%;gap:10px;align-items:center;justify-content:space-between;text-align:left;background:transparent;min-height:44px;color:var(--green-deep);padding:4px 0}
+.content-stop strong{font-weight:600;font-size:17px}
+.content-itinerary li p{font-size:14px;color:#4d5d50}
+.content-rain,.content-sources{margin:22px 0;font-size:13px;line-height:1.85;overflow-wrap:anywhere}
+.content-rain summary,.content-sources summary{cursor:pointer;min-height:44px;padding:10px 0;color:var(--green-deep);font-size:14px;font-weight:550}
+.content-rain p,.content-sources p{margin:10px 0;white-space:pre-wrap}
+.content-rain .fact-row{font-size:15px}
+.content-disclaimer{font-size:13px;line-height:1.85;margin-top:24px;color:#4d5d50}
+.content-ask{margin:20px 0 4px}
+.life-chat-ref.content-sources{margin:6px 0 14px;color:#4d5d50}
+.life-chat-ref.content-sources summary{font-size:12px}
+.content-context span{min-width:0;overflow-wrap:anywhere}
+.content-context>button{flex:none}
+.service-desk,.service-ticket,.service-handbook{font-size:15px;line-height:1.85}
+.service-ticket{margin-top:28px}
+.service-phase{padding:24px 0;border-top:1px solid var(--line)}
+.service-phase>h2{font-size:18px;margin-bottom:12px}
+.service-card,.service-guide{padding:16px 0!important;border-bottom:1px solid var(--line);margin:0!important;background:transparent}
+.service-card summary,.service-guide summary{font-size:15px;line-height:1.85;cursor:pointer;padding:8px 0;min-height:44px;font-weight:550;color:var(--green-deep)}
+.service-card h3{font-size:16px;line-height:1.85}
+.service-question-id{font-size:12px;color:#53654f;margin-right:5px;white-space:nowrap}
+.service-status{margin:12px 0;color:#755817;background:#fbf2dc}
+.service-card .fact-row{display:block;padding:14px 0;line-height:1.85;white-space:normal;overflow-wrap:anywhere}
+.service-card .fact-row>span{display:block;font-size:13px;color:#53654f;margin-bottom:5px}
+.service-card .fact-row>p,.service-public-answer{font-size:15px;line-height:1.85;white-space:pre-wrap}
+.service-source,.service-missing{font-size:13px!important;line-height:1.85!important;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:12px}
+.service-source{color:#52634f!important}
+.service-notice{margin:16px 0;line-height:1.85}
+.service-ask{margin-top:12px}
+@media(max-width:360px){.content-tabs button{font-size:13px}.content-search-bottom{gap:8px}.content-detail .detail-grid{grid-template-columns:1fr}.service-card summary,.service-guide summary{font-size:14px}}

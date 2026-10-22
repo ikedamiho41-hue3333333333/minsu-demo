@@ -1,3 +1,4 @@
+import {answerContent} from './content.mjs';
 const day=86400000,clone=x=>structuredClone(x);
 const clean=(s,label,max=200)=>{if(typeof s!=='string'||!s.trim()||s.trim().length>max)throw Error(`请填写${label}（1—${max}字）`);return s.trim();};
 const stamp=t=>new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Shanghai'}).format(t);
@@ -20,8 +21,9 @@ export function eventStatus(e,now=Date.now()){return e.status==='cancelled'?'can
 export function eventsFor(life,cityId,{now=Date.now(),all=false}={}){
  return Object.values(life.events).filter(e=>e.cityId===cityId&&(all||!['cancelled','ended'].includes(eventStatus(e,now)))).sort((a,b)=>a.start-b.start);
 }
-export function lifeAnswer(life,question,cityId,{now=Date.now()}={}){
+export function lifeAnswer(life,question,cityId,{now=Date.now(),propertyId,context=null}={}){
  const q=clean(question,'问题',1000);
+ const contentReply=answerContent(q,{propertyId,cityId,context});if(contentReply)return contentReply;
  if(cityId!=='dali')return {status:'no_data',mode:'demo',body:'当前房源所在城市还没有本地生活资料。大理示例活动不会默认推荐到这里，可以切换到大理示例房源体验。',refs:[]};
  let body='',refs=[];
  if(/活动|市集|扎染|音乐|周末|今天|明天|最近|这几天/.test(q)){
