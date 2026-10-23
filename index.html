@@ -235,6 +235,101 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
  });
 }
 (function() {
+	//#region src/png-cover.mjs
+	const signature$1 = [
+		137,
+		80,
+		78,
+		71,
+		13,
+		10,
+		26,
+		10
+	];
+	const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
+		for (let bit = 0; bit < 8; bit++) value = value & 1 ? 3988292384 ^ value >>> 1 : value >>> 1;
+		return value >>> 0;
+	});
+	const invalidPng = () => {
+		throw Error("封面图片无效：仅支持完整且结构有效的PNG图片");
+	};
+	function crc32(bytes, start, end) {
+		let crc = 4294967295;
+		for (let i = start; i < end; i++) crc = crcTable[(crc ^ bytes[i]) & 255] ^ crc >>> 8;
+		return (crc ^ 4294967295) >>> 0;
+	}
+	function verifyPng(bytes) {
+		if (bytes.length < 45 || signature$1.some((value, index) => bytes[index] !== value)) invalidPng();
+		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		let offset = 8, header = false, palette = false, data = false, dataEnded = false, dataBytes = 0, colorType;
+		while (offset + 12 <= bytes.length) {
+			const length = view.getUint32(offset), end = offset + 12 + length;
+			if (length > 2147483647 || end > bytes.length) invalidPng();
+			const type = String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
+			if (!/^[A-Za-z]{2}[A-Z][A-Za-z]$/.test(type)) invalidPng();
+			if (![
+				"IHDR",
+				"PLTE",
+				"IDAT",
+				"IEND"
+			].includes(type) && /^[A-Z]/.test(type)) invalidPng();
+			if (crc32(bytes, offset + 4, end - 4) !== view.getUint32(end - 4)) invalidPng();
+			if (!header) {
+				if (type !== "IHDR" || length !== 13) invalidPng();
+				const width = view.getUint32(offset + 8), height = view.getUint32(offset + 12);
+				const depth = bytes[offset + 16];
+				colorType = bytes[offset + 17];
+				if (!width || !height || width > 2147483647 || height > 2147483647 || !{
+					0: [
+						1,
+						2,
+						4,
+						8,
+						16
+					],
+					2: [8, 16],
+					3: [
+						1,
+						2,
+						4,
+						8
+					],
+					4: [8, 16],
+					6: [8, 16]
+				}[colorType]?.includes(depth) || bytes[offset + 18] !== 0 || bytes[offset + 19] !== 0 || bytes[offset + 20] > 1) invalidPng();
+				header = true;
+			} else if (type === "IHDR") invalidPng();
+			if (type === "PLTE") {
+				if (palette || data || !length || length > 768 || length % 3 || colorType === 0 || colorType === 4) invalidPng();
+				palette = true;
+			}
+			if (type === "IDAT") {
+				if (dataEnded || colorType === 3 && !palette) invalidPng();
+				data = true;
+				dataBytes += length;
+			} else if (data) dataEnded = true;
+			if (type === "IEND") {
+				if (length !== 0 || !dataBytes || end !== bytes.length) invalidPng();
+				return;
+			}
+			offset = end;
+		}
+		invalidPng();
+	}
+	/** Read an HTTP response as verified PNG bytes, normalizing absent/wrong MIME. */
+	async function pngCoverBlob(response) {
+		if (!response?.ok) throw Error(`读取海报封面失败（HTTP ${response?.status ?? "未知"}）`);
+		let buffer;
+		try {
+			buffer = await response.arrayBuffer();
+		} catch (error) {
+			throw Error(`读取海报封面失败：${error?.message || "图片内容读取失败"}`);
+		}
+		const bytes = new Uint8Array(buffer);
+		verifyPng(bytes);
+		return new Blob([bytes], { type: "image/png" });
+	}
+	//#endregion
 	//#region src/experience.mjs
 	function contentRecord$1(id, propertyId, values = {}) {
 		return {
@@ -11913,10 +12008,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return `<div class="page-pad"><h1 class="page-title">让客人走进空间。</h1><p class="page-description">维护看房入口和展示说明，随民宿资料发布生效。</p><form id="vr-form"><label class="field">VR入口短句<input name="vrLabel" value="${esc(d.vrLabel || "身临其境，感受空间")}" maxlength="80" required></label><label class="field">VR展示说明<textarea name="vrDescription" maxlength="500" required>${esc(d.vrDescription || "走进空间，感受一间民宿。")}</textarea></label><label class="field">当前VR素材链接<input value="${esc(d.vrUrl)}" readonly><small>沿用已指定的途家／如视第三方参考案例。本轮尚未提供本店真实VR素材。</small></label><p class="notice">素材类型：第三方参考。客人页面持续标明“非当前房源实拍”，此说明不会因编辑短句而隐藏。</p><button class="btn secondary wide" type="submit">保存VR资料草稿</button></form><div style="margin-top:12px">${btn("发布已保存的资料与问答", "publish-knowledge", "wide", state.draftDirty ? "" : "disabled")}</div><a class="text-btn" href="${esc(d.vrUrl)}" target="_blank" rel="noopener noreferrer">查看当前VR素材 ${icon("external")}</a></div>`;
 	}
 	async function readPosterCover() {
-		if (!coverPromise) coverPromise = fetch(new URL("assets/scene.png", location.href)).then((r) => {
-			if (!r.ok) throw Error("封面加载失败");
-			return r.blob();
-		}).then((blob) => new Promise((resolve, reject) => {
+		if (!coverPromise) coverPromise = fetch(new URL("assets/scene.png", location.href)).then(pngCoverBlob).then((blob) => new Promise((resolve, reject) => {
 			const reader = new FileReader();
 			reader.onload = () => resolve(reader.result);
 			reader.onerror = () => reject(Error("封面读取失败"));

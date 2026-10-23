@@ -1,5 +1,12 @@
 # 民宿工具手机演示原型
 
+## v0.5.1 NAS 同步兼容修正
+
+NAS文件服务不提供图片Content-Type，原海报生成会把PNG误读为通用二进制。现在按实际PNG结构与校验码核对后再设置image/png；错误响应、伪图和损坏内容继续拒绝。460项测试及NAS暂存/原入口各11项交互通过，PNG实际下载并解码；复用现有NAS服务，无需修改配置或重启。公网与模块镜像沿用同份源码。
+
+当前公网入口：<https://ikedamiho41-hue3333333333.github.io/minsu-demo/?mobile=1&property=qinghuan-dali&release=20261023-v051#/guest/home>。NAS局域网入口及回读、回退证据记录在本机`检查记录/NAS同步-v0.5-2026-10-23/`。当前构建SHA256为`e5364da6df58083bb866dca4b92f71fc5151b30cc76c45567316ff0f880948ca`，613137字节；旧0.5.0验收记录与包保留。
+
+
 ## v0.5 前端演示
 
 [手机统一入口](https://ikedamiho41-hue3333333333.github.io/minsu-demo/?mobile=1&property=qinghuan-dali&release=20261023-v05#/guest/home)。页面顶部切换客人端/商家端；具体出租单元分享使用share=1，仅显示客人页面。

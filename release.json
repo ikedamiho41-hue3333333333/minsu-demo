@@ -1,9 +1,9 @@
 {
-  "version": "0.5.0",
-  "release": "20261023-v05",
-  "builtAt": "2026-10-23T10:58:19.470Z",
-  "index_sha256": "303d6d2cf321823c213e8db1f26f07427de3580db802c65f1484c40247044ab7",
-  "index_bytes": 610070,
+  "version": "0.5.1",
+  "release": "20261023-v051",
+  "builtAt": "2026-10-23T11:35:01.263Z",
+  "index_sha256": "e5364da6df58083bb866dca4b92f71fc5151b30cc76c45567316ff0f880948ca",
+  "index_bytes": 613137,
   "knowledge_guides": 30,
   "content_records": 85,
   "theme_routes": 5,
@@ -18,7 +18,7 @@
     "minsu-mini-v040",
     "minsu-mini-v030"
   ],
-  "domain_tests": 449,
+  "domain_tests": 460,
   "source_question_checks": 120,
   "counterexamples": 6,
   "physical_phone_acceptance": "pending",

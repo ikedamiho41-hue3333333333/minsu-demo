@@ -1,3 +1,4 @@
+import {pngCoverBlob} from './png-cover.mjs';
 import {visiblePublishedItem} from './experience-answer.mjs';
 import {STORAGE_KEY,LEGACY_KEY,loadWorkspaceStorage,saveWorkspaceStorage,recoverWorkspaceStorage,inspectWorkspace,listWorkspaceBackups,readWorkspaceBackup} from './workspace-storage.mjs';
 import {setPropertyVisibility} from './catalog.mjs';
@@ -15,7 +16,7 @@ import {createProperty,createRoom,saveRoom,saveSpace,setDraftRentalMode} from '.
 import {createSeed,dispatch,guestThreads,TOPICS} from './model.mjs';
 import {icon} from './icons.mjs';
 import {originalConversationMarkup} from './merchant-ui.mjs';
-import {createWorkspace,shareUnits,shareUrl,resolveTarget,replaceProperty,updateRentalMode,ticketPreview,merchantPendingSummary,ensureQinghuanWorkspace} from './catalog.mjs?v=20261023-v05';
+import {createWorkspace,shareUnits,shareUrl,resolveTarget,replaceProperty,updateRentalMode,ticketPreview,merchantPendingSummary,ensureQinghuanWorkspace} from './catalog.mjs?v=20261023-v051';
 import {lifeAnswer,saveEvent,syncDemo,LIFE_PLACES} from './local-life.mjs';
 import {lifeCard,lifeHome,lifeChat,lifeComposer,eventContent,activityAdmin,activityForm,dateText,eventsPreviewMarkup} from './life-ui.mjs';
 import {isMobilePresentation,propertyUrl} from './presentation.mjs';
@@ -225,7 +226,7 @@ function vrEditor(){
  return `<div class="page-pad"><h1 class="page-title">让客人走进空间。</h1><p class="page-description">维护看房入口和展示说明，随民宿资料发布生效。</p><form id="vr-form"><label class="field">VR入口短句<input name="vrLabel" value="${esc(d.vrLabel||'身临其境，感受空间')}" maxlength="80" required></label><label class="field">VR展示说明<textarea name="vrDescription" maxlength="500" required>${esc(d.vrDescription||'走进空间，感受一间民宿。')}</textarea></label><label class="field">当前VR素材链接<input value="${esc(d.vrUrl)}" readonly><small>沿用已指定的途家／如视第三方参考案例。本轮尚未提供本店真实VR素材。</small></label><p class="notice">素材类型：第三方参考。客人页面持续标明“非当前房源实拍”，此说明不会因编辑短句而隐藏。</p><button class="btn secondary wide" type="submit">保存VR资料草稿</button></form><div style="margin-top:12px">${btn('发布已保存的资料与问答','publish-knowledge','wide',state.draftDirty?'':'disabled')}</div><a class="text-btn" href="${esc(d.vrUrl)}" target="_blank" rel="noopener noreferrer">查看当前VR素材 ${icon('external')}</a></div>`;
 }
 async function readPosterCover(){
- if(!coverPromise)coverPromise=fetch(new URL('assets/scene.png',location.href)).then(r=>{if(!r.ok)throw Error('封面加载失败');return r.blob();}).then(blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('封面读取失败'));reader.readAsDataURL(blob);})).catch(e=>{coverPromise=null;throw e;});
+ if(!coverPromise)coverPromise=fetch(new URL('assets/scene.png',location.href)).then(pngCoverBlob).then(blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('封面读取失败'));reader.readAsDataURL(blob);})).catch(e=>{coverPromise=null;throw e;});
  return coverPromise;
 }
 async function posterPng(artifact){
