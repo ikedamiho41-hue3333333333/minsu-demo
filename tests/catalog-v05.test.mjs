@@ -87,10 +87,14 @@ test('draft rental mode changes do not invalidate a currently published share un
 test('replacing a published state switches share scope atomically and rejects the previous unit',()=>{
  const w=marked(),nextState=structuredClone(w.properties['lake-inn'].state);
  nextState.draft.rentalMode='whole';nextState.draft.wholeCapacity='建议4人入住';
- const published=dispatch(nextState,{type:'PUBLISH'},{role:'merchant',sessionId:'catalog-publish-test'}),next=catalog.replaceProperty(w,'lake-inn',published);
+ const ctx={role:'merchant',sessionId:'catalog-publish-test'};
+ const confirmed=dispatch(nextState,{type:'CONFIRM_DRAFT',by:'Codex（独立测试操作者）',sourceLabel:'catalog-v05独立测试资料',confirmTestContent:true},ctx);
+ const published=dispatch(confirmed,{type:'PUBLISH'},ctx),next=catalog.replaceProperty(w,'lake-inn',published);
  assert.equal(next.properties['lake-inn'].rentalMode,'whole');assert.deepEqual(catalog.shareUnits(next,'lake-inn').map(unit=>unit.id),['whole']);
  assert.equal(catalog.resolveTarget(next,'?property=lake-inn&unit=sea-king&share=1').ok,false);
- assert.equal(catalog.resolveTarget(next,'?property=lake-inn&unit=whole&share=1').ok,true);
+ assert.equal(catalog.resolveTarget(next,'?property=lake-inn&unit=whole&share=1').ok,false);
+ const currentLink=catalog.shareUrl(next,{merchantId:'lake',propertyId:'lake-inn',unitId:'whole',baseUrl:'https://example.test/'});
+ assert.equal(catalog.resolveTarget(next,new URL(currentLink).search).ok,true);
 });
 
 test('disabled rooms stop resolving after publication and never fall back to a different property',()=>{

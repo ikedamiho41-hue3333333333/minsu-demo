@@ -1,3 +1,7 @@
+import {setPropertyVisibility} from './catalog.mjs';
+import {buildShareArtifact} from './share-artifacts.mjs';
+import {publicationMarkup} from './publication-ui.mjs';
+import {publicationStatus} from './publication.mjs';
 import {selectDraft,restoreDraft} from './conversation-drafts.mjs';
 import {arrivalMarkup,handbookMarkup,guideEditorMarkup} from './guide-ui.mjs';
 import {readGuideForm} from './guide.mjs';
@@ -19,7 +23,7 @@ import {serviceDeskMarkup,ticketServiceMarkup,guestHandbookMarkup} from './servi
 
 const STORAGE='minsu-mini-v040',LEGACY_STORAGE='minsu-mini-v030',SESSION='minsu-mini-guest-session',DRAFT='minsu-mini-composer-v040';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let workspace,state,target,activePropertyId,merchantId,sessionId,storageError='',composer={body:'',context:null},editorCache=null,knowledgeCache=null,vrCache=null,replyCache={},roomFilter='all',queueFilter='all',mobileOpen=false,toastTimer,lastRoute='',dialogAction=null,returnFocus=null,lifeFilter='all',lifeDraft='',lifeContext=null,lifePrevious=null,contentTab='places',contentCategory='all',contentQuery='',contentLimit=16,recommendationFilters={period:'all',party:'all'},recommendationEdit={kind:'place',id:null};
+let workspace,state,target,activePropertyId,merchantId,sessionId,storageError='',composer={body:'',context:null},editorCache=null,knowledgeCache=null,vrCache=null,replyCache={},roomFilter='all',queueFilter='all',mobileOpen=false,toastTimer,lastRoute='',dialogAction=null,returnFocus=null,lifeFilter='all',lifeDraft='',lifeContext=null,lifePrevious=null,contentTab='places',contentCategory='all',contentQuery='',contentLimit=16,recommendationFilters={period:'all',party:'all'},recommendationEdit={kind:'place',id:null},previewSection='home',maintenanceDirty=false,activeShare=null,coverPromise=null;
 const customerPreview=new URLSearchParams(location.search).get('share')==='1';
 const mobilePresentation=()=>isMobilePresentation(location.search,window.innerWidth);
 function fitViewport(){document.documentElement.style.setProperty('--app-height',(window.visualViewport?.height||window.innerHeight)+'px');}
@@ -79,7 +83,7 @@ function go(route){const h='#/'+route;if(location.hash===h)render();else locatio
 function goChat(body='',context=null){const normalized=context?{...context,propertyId:activePropertyId,version:state.published.version,label:context.label||state.published.rooms.find(r=>r.id===context.roomId)?.name||context.spaceName||'本店资料'}:null;composer=selectDraft(composer,body||undefined,normalized);saveComposer();go('guest/chat');}
 function showDialog(title,body,onAction=null){
  returnFocus=document.activeElement;dialogAction=onAction;
- const d=$('#detail-dialog');d.innerHTML=`<div class="dialog-head"><h2 id="dialog-title">${esc(title)}</h2><button class="icon-btn" data-action="close-dialog" aria-label="关闭">${icon('close')}</button></div>${body}`;d.showModal();
+ const d=$('#detail-dialog');d.innerHTML=`<div class="dialog-head"><h2 id="dialog-title">${esc(title)}</h2><button class="icon-btn" data-action="close-dialog" aria-label="关闭">${icon('close')}</button></div>${body}`;if(!d.open)d.showModal();
 }
 function closeDialog(){const d=$('#detail-dialog');d.close();dialogAction=null;if(returnFocus?.isConnected)returnFocus.focus();}
 function tabbar(){
@@ -117,6 +121,7 @@ function headerInfo(){
   if(p==='space'){title='公共区域';back='guest/rooms';}if(p==='life'){title=currentCity().name+' · 本地生活';}if(p==='life-chat'){title=currentCity().name+' · 本地生活AI';back='guest/life';}if(['life-place','life-route','life-lead'].includes(p)){title=({'life-place':'地点资料','life-route':'主题路线','life-lead':'活动线索'})[p];back='guest/life';}if(p==='handbook'){title='入住指南';back='guest/home';}
  }
  if(r==='guest'){if(p==='arrival'){title='如何到店';back='guest/handbook';}if(p==='life-library'){title='完整资料预览';back='guest/life';}if(p==='recommended-place'||p==='recommended-route'){title=p==='recommended-place'?'精选地点':'推荐路线';back='guest/life';}}
+ if(r==='merchant'){const names={'guide-editor':'到店与住店指南',recommendations:'精选与来源',publication:'确认与发布',preview:'客人页草稿预览',units:'房间与公共空间','new-property':'新增房源','room-edit':'房间草稿','space-edit':'空间草稿'};if(names[p]){title=names[p];back=p==='preview'?'merchant/publication':'merchant/editor';}}
  return {title,back};
 }
 	function demoEntrySwitch(currentRole) {
@@ -131,6 +136,7 @@ function render(){
  $('#app').innerHTML=`<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="assets/icon.svg" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.5 开发中</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon('house')} 小程序风格演示 <strong>· ${r==='guest'?'客人端':r==='merchant'?'商家端':'平台端'}</strong></span><span>${mobileOpen?'收起讲解':'演示控制'} ${icon(mobileOpen?'close':'more')}</span></button><main class="workspace">${mobilePresentation()?'':narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${target.ok||r!=='guest'?esc(state.published.name):'看房链接失效'} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon('signal')}${icon('wifi')}${icon('battery')}</span></div><header class="mini-header"><div class="mini-title">${info.back?`<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon('back')}</button>`:''}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation()&&!customerPreview?'演示入口与说明':'小程序演示说明'}">${icon('more')}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError?`<div class="error-banner">${esc(storageError)}</div>`:''}${chat||localChat?renderChat():`<div class="phone-body ${p==='vr'&&r==='guest'?'vr-body':''}" id="phone-scroll">${content()}</div>`}${noTabs?'':tabbar()}${localChat?lifeComposer(lifeDraft,lifeContextMarkup()+(lifePrevious?'<button type="button" class="text-btn restore-draft" data-action="restore-life-draft">恢复上次未发送内容</button>':''),!target.ok||!state.visible||!sessionId):chat?composerView():r==='merchant'&&p==='editor'?editorActions():''}${r==='guest'&&['room','space'].includes(p)?detailActions():''}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
  if(chat||localChat){const c=$('.chat-scroll');if(c)c.scrollTop=c.scrollHeight;const body=$('.phone-body');if(body)body.scrollTop=body.scrollHeight;}
  else if(prevRoute===location.hash&&$('.phone-body'))$('.phone-body').scrollTop=prevScroll;
+ if(p==='preview')for(const el of document.querySelectorAll('.draft-preview button,.draft-preview input,.draft-preview select,.draft-preview textarea,.draft-preview a')){if(el.tagName==='A'){el.removeAttribute('href');el.tabIndex=-1;el.setAttribute('aria-disabled','true');}else el.disabled=true;}
  if(p==='editor'&&editorCache)fillEditor();
  if(p==='knowledge-edit'&&knowledgeCache)fillKnowledge();
  if(p==='ticket'&&replyCache[parts()[2]])$('#reply-body').value=replyCache[parts()[2]];
@@ -143,17 +149,22 @@ function content(){
   if(!state.visible)return `<div class="page-pad"><div class="empty-state">${icon('house')}<h2>民宿资料暂时停止展示</h2><p>请联系民宿管家确认。恢复展示后可继续看房和咨询。</p></div>${btn('查看已有咨询','switch-chat','secondary wide')}</div>`;
   if(p==='life')return recommendationsMarkup(state.published,lifeScope(),recommendationFilters);if(p==='recommended-place')return recommendedPlaceMarkup(parts()[2],state.published,lifeScope());if(p==='recommended-route')return recommendedRouteMarkup(parts()[2],state.published,lifeScope());if(p==='life-library')return contentHome(lifeScope(),{tab:contentTab,category:contentCategory,query:contentQuery,limit:contentLimit,eventsMarkup:eventsPreviewMarkup(workspace.life,currentCity())})||'<div class="page-pad"><h1 class="page-title">本房源暂无原稿资料库</h1><p class="notice">未将其他房源的专属资料混入本店。可从演示商家选择清欢资料预览，查看已有85条资料与5条主题路线。</p></div>';if(p==='life-place')return placeContent(parts()[2],lifeScope());if(p==='life-route')return routeContent(parts()[2],lifeScope());if(p==='life-lead')return leadContent(parts()[2],lifeScope());if(p==='handbook')return `<div class="page-pad">${handbookMarkup(activePropertyId,state.published)}</div>`;if(p==='arrival')return `<div class="page-pad">${arrivalMarkup(state.published,activePropertyId,target.unitId||null)}</div>`;if(p==='home')return home();if(p==='rooms')return rooms();if(p==='room')return roomDetail();if(p==='space')return spaceDetail();if(p==='vr')return vr();
  }
- if(r==='merchant'){if(p==='guide-editor')return `<div class="page-pad">${guideEditorMarkup(state,activePropertyId)}</div>`;if(p==='recommendations')return recommendationEditorMarkup(state.draft,activePropertyId,recommendationEdit);if(p==='new-property')return propertyFormMarkup();if(p==='units')return unitManagerMarkup(state);if(p==='room-edit')return roomFormMarkup(state,parts()[2]);if(p==='space-edit')return spaceFormMarkup(state,parts()[2]);if(p==='service')return `<div class="page-pad"><h1 class="page-title">接待处置资料</h1><p class="page-description">按问题查看确认清单、内部动作建议和责任岗位。</p>${serviceDeskMarkup(activePropertyId,state.published.knowledge)||'<p class="notice">当前房源暂无此组资料。</p>'}</div>`;if(p==='home')return merchantHome();if(p==='queue')return queue();if(p==='ticket')return ticketDetail();if(p==='editor')return editor();if(p==='vr')return vrEditor();if(p==='knowledge')return knowledge();if(p==='knowledge-edit')return knowledgeEditor();}
+ if(r==='merchant'){if(p==='publication')return publicationMarkup(state);if(p==='preview')return draftPreview();if(p==='guide-editor')return `<div class="page-pad">${guideEditorMarkup(state,activePropertyId)}${btn('确认与发布','open-publication','outline wide')}</div>`;if(p==='recommendations')return `<div class="page-pad">${recommendationEditorMarkup(state.draft,activePropertyId,recommendationEdit)}${btn('确认与发布','open-publication','outline wide')}</div>`;if(p==='new-property')return propertyFormMarkup();if(p==='units')return unitManagerMarkup(state);if(p==='room-edit')return roomFormMarkup(state,parts()[2]);if(p==='space-edit')return spaceFormMarkup(state,parts()[2]);if(p==='service')return `<div class="page-pad"><h1 class="page-title">接待处置资料</h1><p class="page-description">按问题查看确认清单、内部动作建议和责任岗位。</p>${serviceDeskMarkup(activePropertyId,state.published.knowledge)||'<p class="notice">当前房源暂无此组资料。</p>'}</div>`;if(p==='home')return merchantHome();if(p==='queue')return queue();if(p==='ticket')return ticketDetail();if(p==='editor')return editor();if(p==='vr')return vrEditor();if(p==='knowledge')return knowledge();if(p==='knowledge-edit')return knowledgeEditor();}
  if(r==='platform'){if(p==='activities')return activityAdmin(workspace.life);if(p==='event-edit')return activityForm(workspace.life.events[parts()[2]]||null);return platform();}
  return `<div class="page-pad"><h1 class="page-title">页面未找到</h1>${btn('返回民宿首页','guest-home','wide')}</div>`;
 }
-function inlineVr(label,cls=''){
- const p=state.published;
+function inlineVr(label,cls='',snapshot=null){
+ const p=snapshot||state.published;
  return `<section class="vr-inline ${cls}" aria-label="${esc(label)}"><div class="vr-inline-player"><iframe class="vr-inline-frame" title="${esc(label)}：第三方参考，非当前民宿实拍" src="${esc(p.vrUrl)}" allow="fullscreen; gyroscope; accelerometer" referrerpolicy="no-referrer"></iframe><span class="vr-inline-disclosure">VR参考案例 · 非本店实拍</span></div><div class="vr-inline-toolbar"><div><strong>${icon('panorama')} VR 看房</strong><small>${esc(p.vrLabel||'拖动全景，感受空间')}</small></div><button class="text-btn" data-action="nav" data-route="guest/vr" aria-label="VR 看房，完整观看">${icon('expand')} 完整观看</button><a class="text-btn vr-inline-original" href="${esc(p.vrUrl)}" target="_blank" rel="noopener noreferrer" aria-label="打开VR原站">${icon('external')}</a></div></section>`;
 }
-function home(){
- const p=guestProperty();
- return `${inlineVr('首页VR看房')}<div class="home-main vr-first"><div class="property-heading"><h1>${esc(p.name)}</h1>${icon('leaf')}</div><p class="property-location">${icon('pin')}${esc(p.location)}</p><p class="property-tagline">${esc(p.subtitle)}</p><span class="rental-badge">${currentEntry().rentalMode==='pending'?'出租方式待店方确认':currentEntry().rentalMode==='whole'?'整院包栋 · 卧室不单独出租':target.unitId?'当前分享：单间出租':'按间出租 · 可分别分享房间'}</span><section class="ai-entry"><div class="ai-entry-title">${icon('spark')}<strong>AI 民宿管家</strong><small>随时问，少等待</small></div><p>停车、入住、厨房和房间，想问什么？</p><button class="ask-link" data-action="switch-chat"><span>问问这家民宿的事…</span>${icon('arrow')}</button></section><div class="home-quick-actions"><button class="btn secondary" data-action="nav" data-route="guest/arrival">如何到店</button><button class="btn outline" data-action="nav" data-route="guest/handbook">入住指南</button><button class="btn outline" data-action="nav" data-route="guest/life">周边推荐</button></div><div class="section-title"><h2>${currentEntry().rentalMode==='pending'?'真实房源资料待补齐':currentEntry().rentalMode==='whole'?'整院里的卧室':'喜欢的房间，先看看'}</h2><button class="text-btn" data-action="nav" data-route="guest/rooms">房间设施 ${icon('chevron')}</button></div>${p.profilePending?'<p class="notice">已接入清欢30问接待指引。具体店规尚未确认时，AI会说明缺项并请管家确认。</p><button class="text-btn" data-action="nav" data-route="guest/handbook">查看入住前、中、后的服务手册</button>':''}<div class="room-preview">${p.rooms.map(r=>`<button class="preview-item" data-action="nav" data-route="guest/room/${esc(r.id)}">${photo(r.photo,'preview-photo',r.name+'（AI示例图）')}<strong>${esc(r.name)}</strong><small>${esc(r.area)} · ${esc(r.beds)}</small></button>`).join('')}</div><div class="amenities">${[['kitchen','kitchen','厨房说明'],['parking','parking','停车说明'],['wifi','wifi','网络设施'],['environment','leaf','公共区域']].map(([k,i,l])=>`<button class="amenity" data-action="fact" data-key="${k}">${icon(i)}${l}</button>`).join('')}</div><div class="section-title"><h2>关于这座小院</h2></div><p class="intro-copy">${esc(p.description)}</p><div class="facts-list">${[['checkin','clock','入住与退房'],['kitchen','kitchen','厨房使用说明'],['parking','parking','自驾与停车']].map(([k,i,l])=>`<button class="fact-row" data-action="fact" data-key="${k}">${icon(i)}<span>${l}</span>${icon('chevron')}</button>`).join('')}</div><p class="demo-footnote">示例资料仅供原型演示 · 吃喝玩乐可进入本地生活<br>${esc(state.published.name)} · 期待与你相遇</p></div>`;
+function home(snapshot=null){
+ const p=snapshot?{...snapshot,rooms:snapshot.rooms.filter(r=>r.enabled!==false)}:guestProperty(),rental=snapshot?.rentalMode||currentEntry().rentalMode;
+ return `${inlineVr('首页VR看房','',snapshot)}<div class="home-main vr-first"><div class="property-heading"><h1>${esc(p.name)}</h1>${icon('leaf')}</div><p class="property-location">${icon('pin')}${esc(p.location)}</p><p class="property-tagline">${esc(p.subtitle)}</p><span class="rental-badge">${rental==='pending'?'出租方式待店方确认':rental==='whole'?'整院包栋 · 卧室不单独出租':target.unitId?'当前分享：单间出租':'按间出租 · 可分别分享房间'}</span><section class="ai-entry"><div class="ai-entry-title">${icon('spark')}<strong>AI 民宿管家</strong><small>随时问，少等待</small></div><p>停车、入住、厨房和房间，想问什么？</p><button class="ask-link" data-action="switch-chat"><span>问问这家民宿的事…</span>${icon('arrow')}</button></section><div class="home-quick-actions"><button class="btn secondary" data-action="nav" data-route="guest/arrival">如何到店</button><button class="btn outline" data-action="nav" data-route="guest/handbook">入住指南</button><button class="btn outline" data-action="nav" data-route="guest/life">周边推荐</button></div><div class="section-title"><h2>${rental==='pending'?'真实房源资料待补齐':rental==='whole'?'整院里的卧室':'喜欢的房间，先看看'}</h2><button class="text-btn" data-action="nav" data-route="guest/rooms">房间设施 ${icon('chevron')}</button></div>${p.profilePending?'<p class="notice">已接入清欢30问接待指引。具体店规尚未确认时，AI会说明缺项并请管家确认。</p><button class="text-btn" data-action="nav" data-route="guest/handbook">查看入住前、中、后的服务手册</button>':''}<div class="room-preview">${p.rooms.map(r=>`<button class="preview-item" data-action="nav" data-route="guest/room/${esc(r.id)}">${photo(r.photo,'preview-photo',r.name+'（AI示例图）')}<strong>${esc(r.name)}</strong><small>${esc(r.area)} · ${esc(r.beds)}</small></button>`).join('')}</div><div class="amenities">${[['kitchen','kitchen','厨房说明'],['parking','parking','停车说明'],['wifi','wifi','网络设施'],['environment','leaf','公共区域']].map(([k,i,l])=>`<button class="amenity" data-action="fact" data-key="${k}">${icon(i)}${l}</button>`).join('')}</div><div class="section-title"><h2>关于这座小院</h2></div><p class="intro-copy">${esc(p.description)}</p><div class="facts-list">${[['checkin','clock','入住与退房'],['kitchen','kitchen','厨房使用说明'],['parking','parking','自驾与停车']].map(([k,i,l])=>`<button class="fact-row" data-action="fact" data-key="${k}">${icon(i)}<span>${l}</span>${icon('chevron')}</button>`).join('')}</div><p class="demo-footnote">示例资料仅供原型演示 · 吃喝玩乐可进入本地生活<br>${esc(snapshot?.name||state.published.name)} · 期待与你相遇</p></div>`;
+}
+function draftPreview(){
+ const candidate={...state.draft,version:state.published.version+1};
+ const content=previewSection==='guide'?`<div class="page-pad">${handbookMarkup(activePropertyId,candidate)}${arrivalMarkup(candidate,activePropertyId,target.unitId||null)}</div>`:previewSection==='life'?recommendationsMarkup(candidate,lifeScope(),{}):home(candidate);
+ return `<div class="draft-preview-label"><strong>客人页草稿预览 · 拟发布 V${candidate.version}</strong><p>仅商家当前浏览器可看，尚未对客发布；以下咨询/分享按钮不可操作。</p><nav aria-label="草稿预览页面">${[['home','房源首页'],['guide','入住指南'],['life','周边推荐']].map(([key,label])=>`<button data-action="preview-section" data-section="${key}" aria-pressed="${previewSection===key}">${label}</button>`).join('')}</nav><button class="text-btn" data-action="nav" data-route="merchant/publication">返回确认与发布</button></div><div class="draft-preview" aria-label="只读客人页草稿">${content}</div>`;
 }
 function rooms(){
  const p=guestProperty();if(!p.rooms.length&&!(p.spaces||[]).length)return `<div class="page-pad"><h1 class="page-title">房源资料待确认</h1><p class="page-description">真实房间、床型、设施和出租方式尚未录入。可以先向AI管家提问，由管家逐项确认。</p>${btn('问问AI管家','switch-chat','wide')}</div>`;const showRooms=roomFilter!=='spaces',showSpaces=roomFilter!=='bedrooms';
@@ -198,12 +209,42 @@ function vrEditor(){
  const d=vrCache||state.draft;
  return `<div class="page-pad"><h1 class="page-title">让客人走进空间。</h1><p class="page-description">维护看房入口和展示说明，随民宿资料发布生效。</p><form id="vr-form"><label class="field">VR入口短句<input name="vrLabel" value="${esc(d.vrLabel||'身临其境，感受空间')}" maxlength="80" required></label><label class="field">VR展示说明<textarea name="vrDescription" maxlength="500" required>${esc(d.vrDescription||'走进空间，感受一间民宿。')}</textarea></label><label class="field">当前VR素材链接<input value="${esc(d.vrUrl)}" readonly><small>沿用已指定的途家／如视第三方参考案例。本轮尚未提供本店真实VR素材。</small></label><p class="notice">素材类型：第三方参考。客人页面持续标明“非当前房源实拍”，此说明不会因编辑短句而隐藏。</p><button class="btn secondary wide" type="submit">保存VR资料草稿</button></form><div style="margin-top:12px">${btn('发布已保存的资料与问答','publish-knowledge','wide',state.draftDirty?'':'disabled')}</div><a class="text-btn" href="${esc(d.vrUrl)}" target="_blank" rel="noopener noreferrer">查看当前VR素材 ${icon('external')}</a></div>`;
 }
+async function readPosterCover(){
+ if(!coverPromise)coverPromise=fetch(new URL('assets/scene.png',location.href)).then(r=>{if(!r.ok)throw Error('封面加载失败');return r.blob();}).then(blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('封面读取失败'));reader.readAsDataURL(blob);})).catch(e=>{coverPromise=null;throw e;});
+ return coverPromise;
+}
+async function posterPng(artifact){
+ const url=URL.createObjectURL(new Blob([artifact.posterSvg],{type:'image/svg+xml;charset=utf-8'}));
+ try{const image=new Image();image.src=url;await image.decode();const canvas=document.createElement('canvas');canvas.width=artifact.posterWidth;canvas.height=artifact.posterHeight;const context=canvas.getContext('2d');if(!context)throw Error('浏览器无法生成海报画布');context.drawImage(image,0,0);return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('海报转换失败')),'image/png'));}finally{URL.revokeObjectURL(url);}
+}
+async function showShareDialog(propertyId,unitId){
+ const options={merchantId,propertyId,unitId,baseUrl:location.href},initial=buildShareArtifact(workspace,options);
+ if(activeShare?.previewUrl)URL.revokeObjectURL(activeShare.previewUrl);activeShare=initial;
+ showDialog('分享：'+initial.name,`<p class="small muted">同一链接用于预览、复制和二维码 · 当前公开 V${initial.version}</p><label class="field">看房演示链接<input id="share-link" value="${esc(initial.url)}" readonly aria-label="看房演示链接"></label><div class="share-qr" aria-label="对应出租单元的二维码">${initial.qrSvg}</div><div class="dialog-actions"><a class="btn outline" href="${esc(initial.url)}" target="_blank" rel="noopener noreferrer">预览客户页面</a><button class="btn" data-action="copy-share" data-url="${esc(initial.url)}">复制看房链接</button></div><p id="share-feedback" class="small" role="status" aria-live="polite"></p><p class="notice">这是前端原型，各浏览器资料独立保存。新建或修改的数据未跨设备同步；对外演示优先使用默认样例。VR为参考体验，示例封面不是本店实拍。</p><section class="poster-panel"><h3>手机介绍海报</h3><p id="poster-status" class="small muted" role="status">正在读取公开示例封面并生成海报…</p><img id="poster-preview" class="poster-preview" alt="${esc(initial.name)}的公开资料介绍海报" hidden><button class="btn secondary wide" data-action="download-poster" disabled>下载手机海报（PNG）</button><button class="text-btn" data-action="retry-poster" data-property="${esc(propertyId)}" data-unit="${esc(unitId)}">重新生成海报</button><p class="small muted">若微信无法下载，可用浏览器打开，或长按已生成的PNG海报预览保存。</p></section>`);
+ try{const coverDataUrl=await readPosterCover();if(activeShare!==initial||!$('#detail-dialog').open)return;if(workspace.properties[propertyId].state.published.version!==initial.version)throw Error('公开资料已更新，请重新生成海报');
+  const artifact=buildShareArtifact(workspace,{...options,coverDataUrl}),pngBlob=await posterPng(artifact);if(activeShare!==initial||!$('#detail-dialog').open)return;
+  artifact.pngBlob=pngBlob;artifact.previewUrl=URL.createObjectURL(pngBlob);activeShare=artifact;$('#poster-preview').src=artifact.previewUrl;$('#poster-preview').hidden=false;$('#poster-status').textContent='海报已生成 · 仅使用当前公开资料与示例封面';$('[data-action="download-poster"]').disabled=false;
+ }catch(e){if(activeShare===initial&&$('#poster-status'))$('#poster-status').textContent='未能生成海报：'+e.message+'。资料和输入仍保留，可继续复制链接或重新生成。';}
+}
 function merchantShareSection(){
  const owned=Object.entries(workspace.properties).filter(([,p])=>p.merchantId===merchantId),summary=merchantPendingSummary(workspace,merchantId);
  return `<div class="section-title"><h2>我的房源与分享</h2><span class="tag">${owned.length}处房源</span></div><p class="small muted share-intro">把房间或整院的看房页面发给客人，打开就是VR、房源资料和AI管家。</p><div class="share-properties">${owned.map(([pid,p])=>`<section class="share-property"><div class="share-property-heading"><div><h3>${esc(p.state.published.name)}</h3><span class="rental-badge">${p.rentalMode==='pending'?'出租方式待确认':p.rentalMode==='room'?'按间出租':'整院包栋'} · ${p.state.visible?'展示中':'暂停展示'}</span></div><button class="text-btn" data-action="rental-mode" data-property="${pid}">${icon('edit')} 设置</button></div>${p.rentalMode==='pending'?'<p class="notice">房间与出租方式待确认，暂不生成房间或整院分享链接。</p>':''}${shareUnits(workspace,pid).map(u=>`<div class="share-unit"><span class="share-unit-icon">${icon(p.rentalMode==='whole'?'house':'bed')}</span><div><strong>${esc(u.name)}</strong><p>${esc(u.description)}</p><small>VR资料已绑定 · 当前为参考案例</small><div class="share-unit-actions"><button class="text-btn" data-action="preview-unit" data-property="${pid}" data-unit="${u.id}" ${p.state.visible?'':'disabled'}>预览客人页面 ${icon('external')}</button><button class="btn compact secondary" data-action="share-unit" data-property="${pid}" data-unit="${u.id}" ${p.state.visible?'':'disabled'}>分享看房链接</button></div></div></div>`).join('')}${summary.properties.find(x=>x.propertyId===pid)?.pending?`<p class="property-pending"><strong>待处理 ${summary.properties.find(x=>x.propertyId===pid).pending} 条咨询</strong>${pid!==activePropertyId?`<button class="text-btn" data-action="manage-property" data-property="${pid}">进入该房源处理 ${icon('arrow')}</button>`:''}</p>`:''}${pid!==activePropertyId?`<button class="text-btn" data-action="manage-property" data-property="${pid}">管理这处房源 ${icon('arrow')}</button>`:''}</section>`).join('')}</div><p class="share-local-note">可分享默认示例房源供团队查看。资料修改与咨询记录保存在当前浏览器，不跨设备同步；微信分享卡片随后接入。</p>`;
 }
 function lifeMessages(){return workspace.lifeChats[lifeChatKey(sessionId,currentCity().id,activePropertyId)]||[];}
 function handleExtraAction(a,b){
+ if(b.closest('.draft-preview')){toast('这里只预览草稿，请返回维护页操作。');return true;}
+ if(a==='preview-section'){previewSection=b.dataset.section;render();return true;}
+ if(a==='open-publication'){
+  if(maintenanceDirty){toast('请先保存当前指南或推荐表单，再确认发布。');return true;}
+  if(page()==='editor'&&JSON.stringify(readEditor())!==JSON.stringify(state.draft)){toast('请先保存民宿资料草稿，再确认发布。');return true;}
+  go('merchant/publication');return true;
+ }
+ if(a==='property-visibility'){if(role()!=='merchant'){toast('请从商家端操作');return true;}const visible=!state.visible;showDialog(visible?'恢复房源展示':'暂停房源展示',`<p class="dialog-copy">${visible?'恢复后当前公开资料与有效分享链接可以继续访问。':'暂停后不展示新资料、不接收新提问；原客人仍可只读查看已有咨询。草稿、会话与确认记录保留。'}</p><div class="dialog-actions">${btn('取消','close-dialog','outline')}${btn(visible?'确认恢复':'确认暂停','dialog-confirm','')}</div>`,()=>{try{if(saveWorkspace(setPropertyVisibility(workspace,merchantId,activePropertyId,visible))){render();toast(visible?'已恢复展示。':'已暂停本房源对外展示，原数据保留。');}}catch(e){toast(e.message);}});return true;}
+ if(a==='publish-confirmed'){
+  const check=publicationStatus(state);if(!check.canPublish||!state.draftDirty){toast('请先保存并完成本轮测试确认。');return true;}
+  showDialog('发布已确认草稿',`<p class="dialog-copy">这会公开已确认的测试内容，客人页面与新AI答复同时使用下一版本。真实经营资料仍需授权确认；历史会话保持原来源。</p><div class="dialog-actions">${btn('再看一下','close-dialog','outline')}${btn('确认公开发布','dialog-confirm','')}</div>`,()=>{if(mutate({type:'PUBLISH'},'merchant')){editorCache=null;maintenanceDirty=false;render();toast('已发布公开资料 V'+state.published.version+'。');}});return true;
+ }
+
  if(a==='assistant-scope'){saveComposer();saveLifeDraft();go(b.dataset.scope==='local'?'guest/life-chat':'guest/chat');toast('已切换问答范围，另一范围的输入草稿仍保留。');return true;}
  if(a==='restore-chat-draft'){composer=restoreDraft(composer);saveComposer();render();return true;}
  if(a==='restore-life-draft'){const next=restoreDraft({body:lifeDraft,context:lifeContext,previous:lifePrevious});lifeDraft=next.body;lifeContext=next.context;lifePrevious=null;saveLifeDraft();render();return true;}
@@ -253,10 +294,11 @@ function handleExtraAction(a,b){
  if(a==='life-event'){const event=workspace.life.events[b.dataset.event];if(event)showDialog(event.title,eventContent(event));return true;}
  if(a==='life-place'){const p=LIFE_PLACES.find(p=>p.id===b.dataset.place);if(p)showDialog(p.name,`<p class="dialog-copy">${esc(p.text)}\n\n区域：${esc(p.location)}\n\n原型示例，未连接实时商家数据。</p>${btn('问问本地生活AI','dialog-confirm','secondary wide')}`,()=>{lifeDraft=p.category==='food'?'附近有什么好吃的':'半天可以怎么玩';go('guest/life-chat');});return true;}
  if(a==='share-unit'||a==='preview-unit'){
-  try{const pid=b.dataset.property,unit=shareUnits(workspace,pid).find(u=>u.id===b.dataset.unit),url=shareUrl(workspace,{merchantId,propertyId:pid,unitId:b.dataset.unit,baseUrl:location.href});
-  if(a==='preview-unit'){window.open(url,'_blank','noopener,noreferrer');return true;}
-  showDialog('分享：'+unit.name,`<p class="small muted">${esc(unit.kind)} · 打开后直接进入此出租单元的客人页面</p><label class="field">看房演示链接<input id="share-link" value="${esc(url)}" readonly aria-label="看房演示链接"></label><div class="dialog-actions"><a class="btn outline" href="${esc(url)}" target="_blank" rel="noopener noreferrer">预览客户页面</a><button class="btn" data-action="copy-share" data-url="${esc(url)}">复制看房链接</button></div><p id="share-feedback" class="small" role="status" aria-live="polite" style="margin-top:12px"></p><p class="notice">此链接用于团队演示；各设备独立保存资料和咨询，修改不会同步。VR为参考案例，不代表此单元真实拍摄。</p>`);
-  }catch(e){toast(e.message);}return true;
+  try{if(a==='preview-unit'){const url=shareUrl(workspace,{merchantId,propertyId:b.dataset.property,unitId:b.dataset.unit,baseUrl:location.href});window.open(url,'_blank','noopener,noreferrer');}else showShareDialog(b.dataset.property,b.dataset.unit).catch(e=>toast('未生成分享：'+e.message));}catch(e){toast(e.message);}return true;
+ }
+ if(a==='retry-poster'){showShareDialog(b.dataset.property,b.dataset.unit).catch(e=>toast(e.message));return true;}
+ if(a==='download-poster'){
+  try{if(!activeShare?.pngBlob)throw Error('海报尚未生成，请稍后或重试');const current=workspace.properties[activeShare.propertyId];if(!current||current.state.published.version!==activeShare.version)throw Error('公开资料已更新，请重新生成');shareUrl(workspace,{merchantId,propertyId:activeShare.propertyId,unitId:activeShare.unitId,baseUrl:location.href});const a=document.createElement('a');a.href=activeShare.previewUrl;a.download=activeShare.filename;a.click();$('#poster-status').textContent='已发起PNG下载；若被浏览器拦截，可长按预览保存。';}catch(e){if($('#poster-status'))$('#poster-status').textContent='未下载：'+e.message+'，已编辑资料仍保留。';else toast(e.message);}return true;
  }
  if(a==='copy-share'){
   const feedback=message=>{const el=$('#share-feedback');if(el)el.textContent=message;else toast(message);};
@@ -274,37 +316,42 @@ function handleExtraAction(a,b){
  return false;
 }
 function handleExtraSubmit(event){
- if(event.target.id==='recommendation-filter'){event.preventDefault();recommendationFilters=Object.fromEntries(new FormData(event.target));render();return true;}
- if(event.target.id==='guide-editor-form'||event.target.id==='recommendation-form'){
+ if(event.target.getAttribute('id')==='confirmation-form'){
+  event.preventDefault();const form=new FormData(event.target);
+  if(mutate({type:'CONFIRM_DRAFT',by:String(form.get('by')||''),sourceLabel:String(form.get('sourceLabel')||''),confirmTestContent:form.has('confirmTestContent')},'merchant')){render();toast('测试确认已保存，尚未发布。');}return true;
+ }
+
+ if(event.target.getAttribute('id')==='recommendation-filter'){event.preventDefault();recommendationFilters=Object.fromEntries(new FormData(event.target));render();return true;}
+ if(event.target.getAttribute('id')==='guide-editor-form'||event.target.getAttribute('id')==='recommendation-form'){
   event.preventDefault();if(role()!=='merchant'){toast('请从商家端操作');return true;}
   try{const d=structuredClone(state.draft),data=new FormData(event.target);
-   if(event.target.id==='guide-editor-form')d.experience.guide=readGuideForm(data,d.experience.guide,activePropertyId);
+   if(event.target.getAttribute('id')==='guide-editor-form')d.experience.guide=readGuideForm(data,d.experience.guide,activePropertyId);
    else{const kind=String(data.get('kind')||'place'),key=({place:'places',route:'routes',benefit:'benefits'})[kind];if(!key)throw Error('内容类型无效');const list=d.experience.recommendations[key],previous=list.find(r=>r.id===data.get('id'));const record=readRecommendationForm(data,previous,activePropertyId),index=list.findIndex(r=>r.id===record.id);if(index<0)list.push(record);else list[index]=record;}
-   if(mutate({type:'SAVE_DRAFT',draft:d},'merchant')){render();toast('已保存为待确认草稿，尚未发布。');}
+   if(mutate({type:'SAVE_DRAFT',draft:d},'merchant')){maintenanceDirty=false;render();toast('已保存为待确认草稿，尚未发布。');}
   }catch(e){toast(e.message);}return true;
  }
 
- if(['new-property-form','unit-room-form','unit-space-form','rental-mode-form'].includes(event.target.id)){
+ if(['new-property-form','unit-room-form','unit-space-form','rental-mode-form'].includes(event.target.getAttribute('id'))){
   event.preventDefault();if(role()!=='merchant'){toast('请从商家端操作');return true;}
   try{const f=event.target,data=Object.fromEntries(new FormData(f));let next;
-   if(f.id==='new-property-form'){data.dataIdentity='测试资料／真实确认待补';data.city={id:data.city,name:({dali:'大理',moganshan:'莫干山',pending:'地区待确认'})[data.city]};next=createProperty(workspace,merchantId,data);if(saveWorkspace(next))switchProperty(next.lastCreatedPropertyId,'merchant');return true;}
-   if(f.id==='unit-room-form'){data.facilities=String(data.facilities||'').split(/[，,、]/).map(x=>x.trim()).filter(Boolean);data.enabled=data.enabled!=='false';next=f.dataset.id==='new'?createRoom(workspace,merchantId,activePropertyId,data):saveRoom(workspace,merchantId,activePropertyId,f.dataset.id,data);}
-   if(f.id==='unit-space-form'){data.enabled=data.enabled!=='false';next=saveSpace(workspace,merchantId,activePropertyId,f.dataset.id==='new'?null:f.dataset.id,data);}
-   if(f.id==='rental-mode-form'){next=setDraftRentalMode(workspace,merchantId,activePropertyId,data.rentalMode);next.properties[activePropertyId].state.draft.wholeCapacity=data.wholeCapacity||'人数待确认';}
+   if(f.getAttribute('id')==='new-property-form'){data.dataIdentity='测试资料／真实确认待补';data.city={id:data.city,name:({dali:'大理',moganshan:'莫干山',pending:'地区待确认'})[data.city]};next=createProperty(workspace,merchantId,data);if(saveWorkspace(next))switchProperty(next.lastCreatedPropertyId,'merchant');return true;}
+   if(f.getAttribute('id')==='unit-room-form'){data.facilities=String(data.facilities||'').split(/[，,、]/).map(x=>x.trim()).filter(Boolean);data.enabled=data.enabled!=='false';next=f.dataset.id==='new'?createRoom(workspace,merchantId,activePropertyId,data):saveRoom(workspace,merchantId,activePropertyId,f.dataset.id,data);}
+   if(f.getAttribute('id')==='unit-space-form'){data.enabled=data.enabled!=='false';next=saveSpace(workspace,merchantId,activePropertyId,f.dataset.id==='new'?null:f.dataset.id,data);}
+   if(f.getAttribute('id')==='rental-mode-form'){next=setDraftRentalMode(workspace,merchantId,activePropertyId,data.rentalMode);next.properties[activePropertyId].state.draft.wholeCapacity=data.wholeCapacity||'人数待确认';}
    if(saveWorkspace(next)){editorCache=null;go('merchant/units');toast('已保存草稿；确认发布后才对客生效。');}
   }catch(e){toast(e.message);}return true;
  }
 
- if(event.target.id==='content-search-form'){
+ if(event.target.getAttribute('id')==='content-search-form'){
   event.preventDefault();const data=new FormData(event.target);contentQuery=String(data.get('query')||'').trim().slice(0,100);contentCategory=String(data.get('category')||'all');contentLimit=16;render();return true;
  }
- if(event.target.id==='life-chat-form'){
+ if(event.target.getAttribute('id')==='life-chat-form'){
   event.preventDefault();const body=lifeDraft.trim();if(!body)return true;
   const context={...(lifeContext||{}),scope:'local',propertyId:activePropertyId,unitId:target.unitId||null,cityId:currentCity().id};
   if(mutate({type:'ASK',body,context},'guest')){const reply=currentThread()?.messages.at(-1);lifeDraft='';lifeContext=reply?.resolvedContext?validLifeObject(reply.resolvedContext):null;saveLifeDraft();render();$('#life-chat-input')?.focus({preventScroll:true});}
   return true;
  }
- if(event.target.id==='event-form'){
+ if(event.target.getAttribute('id')==='event-form'){
   event.preventDefault();if(role()!=='platform'){toast('请从平台管理操作。');return true;}
   try{const data=Object.fromEntries(new FormData(event.target)),next=structuredClone(workspace);data.id=event.target.dataset.event||null;data.cityId='dali';data.start=new Date(data.start).getTime();data.end=new Date(data.end).getTime();next.life=saveEvent(next.life,data);next.revision++;
    if(saveWorkspace(next)){go('platform/activities');toast('活动资料已保存，标记为人工录入、待核验。');}
@@ -313,14 +360,15 @@ function handleExtraSubmit(event){
  return false;
 }
 document.addEventListener('change',event=>{
- if(event.target.id==='merchant-select'){const p=Object.entries(workspace.properties).find(([,p])=>p.merchantId===event.target.value);if(p)switchProperty(p[0],role());}
- if(event.target.id==='property-select')switchProperty(event.target.value,role());
+ if(event.target.closest('#guide-editor-form,#recommendation-form'))maintenanceDirty=true;
+ if(event.target.getAttribute('id')==='merchant-select'){const p=Object.entries(workspace.properties).find(([,p])=>p.merchantId===event.target.value);if(p)switchProperty(p[0],role());}
+ if(event.target.getAttribute('id')==='property-select')switchProperty(event.target.value,role());
 });
 function ticketCard(t){
  return `<button class="ticket-item" data-action="nav" data-route="merchant/ticket/${t.id}"><span class="ticket-top"><span>客人咨询 · ${time(t.createdAt)}</span><span class="status-tag ${t.status==='replied'?'done':''}">${({pending:'待接手',processing:'处理中',replied:'已回复'})[t.status]}</span></span><h3>${esc(t.question)}</h3><p>${t.context?.label?'关于：'+esc(t.context.label):t.context?.roomId?'关于：'+esc(state.published.rooms.find(r=>r.id===t.context.roomId)?.name||'房间'):t.context?.spaceName?'关于：'+esc(t.context.spaceName):'来自本店AI管家会话'}</p><span class="ticket-bottom"><span>${t.status==='replied'?'查看人工答复':'查看问题并回复'}</span>${icon('arrow')}</span></button>`;
 }
 function merchantHome(){
- const list=pending(),summary=merchantPendingSummary(workspace,merchantId);return `<div class="merchant-header"><div class="merchant-header-top"><h1>你好，小院管家。</h1><span class="tag">商家演示</span></div><p>${esc(state.published.name)} · 接待工作台</p><div class="merchant-stats"><div><strong>${summary.total}</strong><span>本商家待处理</span></div><div><strong>${Object.values(state.tickets).filter(t=>t.status==='replied').length}</strong><span>本房源已回复</span></div><div><strong>${state.published.knowledge.length}</strong><span>可用问答/指引</span></div></div></div><section class="merchant-section"><div class="section-title" style="margin-top:0"><h2>当前房源待办</h2><button class="text-btn" data-action="nav" data-route="merchant/queue">全部咨询 ${icon('chevron')}</button></div><p class="small muted queue-scope">当前：${esc(state.published.name)} · ${list.length} 条待处理${summary.total>list.length?`；其他房源还有 ${summary.total-list.length} 条，请在下方房源列表处理。`:''}</p>${list.length?list.slice(0,3).map(ticketCard).join(''):`<div class="empty-state">${icon('check')}<h2>当前房源暂无待处理咨询</h2><p>客人在AI对话中点击「请管家确认」后，<br>同一个问题就会出现在这里。</p><button class="text-btn" data-action="try-pets">去客人端试试 ${icon('arrow')}</button></div>`}<div class="section-title"><h2>房源建档</h2></div><div class="home-quick-actions">${btn('新增房源','nav','secondary', 'data-route="merchant/new-property"')}${btn('房间与公共空间','nav','outline','data-route="merchant/units"')}</div>${merchantShareSection()}<div class="section-title"><h2>维护这家民宿</h2></div><div class="merchant-links">${[...(activePropertyId==='qinghuan-dali'?[['service','book','接待处置资料','30问内部动作、责任岗位与确认清单']]:[]),['editor','edit','民宿资料','位置、环境、房间、设施与使用规则'],['knowledge','book','问答知识','高频问题和适合所有客人的公开答复'],['vr','panorama','VR资料','当前使用已指定的第三方参考案例']].map(([r,i,n,d])=>`<button class="merchant-link" data-action="nav" data-route="merchant/${r}">${icon(i)}<span><strong>${n}</strong><small>${d}</small></span>${icon('chevron')}</button>`).join('')}</div><p class="notice">${state.draftDirty?'有尚未发布的资料草稿。客人和AI仍使用当前公开版本。':'公开资料 V'+state.published.version+' 正在使用。保存草稿不会立即影响客人。'}</p></section>`;
+ const list=pending(),summary=merchantPendingSummary(workspace,merchantId);return `<div class="merchant-header"><div class="merchant-header-top"><h1>你好，小院管家。</h1><span class="tag">商家演示</span></div><p>${esc(state.published.name)} · 接待工作台</p><div class="merchant-stats"><div><strong>${summary.total}</strong><span>本商家待处理</span></div><div><strong>${Object.values(state.tickets).filter(t=>t.status==='replied').length}</strong><span>本房源已回复</span></div><div><strong>${state.published.knowledge.length}</strong><span>可用问答/指引</span></div></div></div><section class="merchant-section"><div class="section-title" style="margin-top:0"><h2>当前房源待办</h2><button class="text-btn" data-action="nav" data-route="merchant/queue">全部咨询 ${icon('chevron')}</button></div><p class="small muted queue-scope">当前：${esc(state.published.name)} · ${list.length} 条待处理${summary.total>list.length?`；其他房源还有 ${summary.total-list.length} 条，请在下方房源列表处理。`:''}</p>${list.length?list.slice(0,3).map(ticketCard).join(''):`<div class="empty-state">${icon('check')}<h2>当前房源暂无待处理咨询</h2><p>客人在AI对话中点击「请管家确认」后，<br>同一个问题就会出现在这里。</p><button class="text-btn" data-action="try-pets">去客人端试试 ${icon('arrow')}</button></div>`}<div class="section-title"><h2>房源建档</h2></div><div class="home-quick-actions">${btn('新增房源','nav','secondary', 'data-route="merchant/new-property"')}${btn('房间与公共空间','nav','outline','data-route="merchant/units"')}</div>${merchantShareSection()}<div class="home-quick-actions">${btn('确认与发布','open-publication','secondary')}${btn('到店与住店指南','nav','outline','data-route="merchant/guide-editor"')}${btn('精选与来源','nav','outline','data-route="merchant/recommendations"')}</div><div class="section-title"><h2>维护这家民宿</h2></div><div class="merchant-links">${[...(activePropertyId==='qinghuan-dali'?[['service','book','接待处置资料','30问内部动作、责任岗位与确认清单']]:[]),['editor','edit','民宿资料','位置、环境、房间、设施与使用规则'],['knowledge','book','问答知识','高频问题和适合所有客人的公开答复'],['vr','panorama','VR资料','当前使用已指定的第三方参考案例']].map(([r,i,n,d])=>`<button class="merchant-link" data-action="nav" data-route="merchant/${r}">${icon(i)}<span><strong>${n}</strong><small>${d}</small></span>${icon('chevron')}</button>`).join('')}</div><p class="notice">${state.draftDirty?'有尚未发布的资料草稿。客人和AI仍使用当前公开版本。':'公开资料 V'+state.published.version+' 正在使用。保存草稿不会立即影响客人。'}</p></section>`;
 }
 function queue(){
  const tickets=Object.values(state.tickets).filter(t=>queueFilter==='all'||t.status===queueFilter).sort((a,b)=>b.createdAt-a.createdAt);
@@ -333,24 +381,24 @@ function ticketDetail(){
 }
 function editor(){
  const d=editorCache||state.draft;
- return `<div class="page-pad"><h1 class="page-title">把这家店，说清楚。</h1><p class="page-description">客人看到的资料，也是AI回答的依据。</p><p class="version-line">当前公开 V${state.published.version} · ${state.draftDirty?'有已保存、未发布的草稿':'公开资料与已保存草稿一致'}<br>先保存草稿，检查后再发布生效。</p><button class="btn secondary wide" data-action="nav" data-route="merchant/units">新增、编辑房间与公共空间</button><form id="property-form"><label class="field">民宿名称<input name="name" value="${esc(d.name)}" maxlength="40" required></label><label class="field">一句话介绍<input name="subtitle" value="${esc(d.subtitle)}" maxlength="80" required></label><label class="field">位置与地区<input name="location" value="${esc(d.location)}" maxlength="200" required><small>示例使用虚构位置，不提供真实导航。</small></label><label class="field">民宿介绍<textarea name="description" maxlength="1000" required>${esc(d.description)}</textarea></label><div class="editor-group"><h2>设施与使用规则</h2><p class="small muted" style="margin-top:8px">资料不知道的地方可以留空，AI会请管家确认。</p></div>${Object.entries(TOPICS).filter(([k])=>!['price','nearby'].includes(k)).map(([k,t])=>`<label class="field">${t.label}<textarea name="fact-${k}" maxlength="1000" placeholder="未记录时留空，不作保证">${esc(d.facts[k]?.text||'')}</textarea></label>`).join('')}<div class="editor-group"><h2>房间配置</h2></div>${d.rooms.map((r,idx)=>`<div class="editor-group"><h2>${esc(r.name)}</h2>${[['name','房间名称'],['floor','所在楼层'],['area','面积'],['beds','床型'],['capacity','建议入住人数'],['bath','卫浴']].map(([k,l])=>`<label class="field">${l}<input name="room-${idx}-${k}" maxlength="100" value="${esc(r[k])}" required></label>`).join('')}</div>`).join('')}<p class="demo-footnote">这里只影响本次演示资料，不写入旧版原型。</p></form></div>`;
+ return `<div class="page-pad"><h1 class="page-title">把这家店，说清楚。</h1><p class="page-description">客人看到的资料，也是AI回答的依据。</p><p class="version-line">当前公开 V${state.published.version} · ${state.draftDirty?'有已保存、未发布的草稿':'公开资料与已保存草稿一致'}<br>先保存草稿，检查后再发布生效。</p><button class="btn secondary wide" data-action="nav" data-route="merchant/units">新增、编辑房间与公共空间</button><div class="home-quick-actions">${btn('到店与住店指南','nav','outline','data-route="merchant/guide-editor"')}${btn('精选与来源','nav','outline','data-route="merchant/recommendations"')}</div><form id="property-form"><label class="field">民宿名称<input name="name" value="${esc(d.name)}" maxlength="40" required></label><label class="field">一句话介绍<input name="subtitle" value="${esc(d.subtitle)}" maxlength="80" required></label><label class="field">位置与地区<input name="location" value="${esc(d.location)}" maxlength="200" required><small>示例使用虚构位置，不提供真实导航。</small></label><label class="field">民宿介绍<textarea name="description" maxlength="1000" required>${esc(d.description)}</textarea></label><div class="editor-group"><h2>设施与使用规则</h2><p class="small muted" style="margin-top:8px">资料不知道的地方可以留空，AI会请管家确认。</p></div>${Object.entries(TOPICS).filter(([k])=>!['price','nearby'].includes(k)).map(([k,t])=>`<label class="field">${t.label}<textarea name="fact-${k}" maxlength="1000" placeholder="未记录时留空，不作保证">${esc(d.facts[k]?.text||'')}</textarea></label>`).join('')}<div class="editor-group"><h2>房间配置</h2></div>${d.rooms.map((r,idx)=>`<div class="editor-group"><h2>${esc(r.name)}</h2>${[['name','房间名称'],['floor','所在楼层'],['area','面积'],['beds','床型'],['capacity','建议入住人数'],['bath','卫浴']].map(([k,l])=>`<label class="field">${l}<input name="room-${idx}-${k}" maxlength="100" value="${esc(r[k])}" required></label>`).join('')}</div>`).join('')}<p class="demo-footnote">这里只影响本次演示资料，不写入旧版原型。</p></form></div>`;
 }
 function readEditor(){
  const form=$('#property-form');if(!form)return editorCache||structuredClone(state.draft);
  const data=new FormData(form),d=structuredClone(state.draft);
  for(const k of ['name','subtitle','location','description'])d[k]=String(data.get(k)||'').trim();
- for(const k of Object.keys(TOPICS))if(data.has('fact-'+k))d.facts[k]={text:String(data.get('fact-'+k)||'').trim()};
+ for(const k of Object.keys(TOPICS))if(data.has('fact-'+k))d.facts[k]={...(d.facts[k]||{}),text:String(data.get('fact-'+k)||'').trim()};
  d.rooms.forEach((r,idx)=>{for(const k of ['name','floor','area','beds','capacity','bath'])r[k]=String(data.get(`room-${idx}-${k}`)||'').trim();});
  return d;
 }
 function fillEditor(){/* The template reads the cached draft directly. */}
-function editorActions(){return `<div class="publish-bar">${btn('保存草稿','save-draft','secondary')}${btn('发布到客人端','publish-editor','')}</div>`;}
+function editorActions(){return `<div class="publish-bar">${btn('保存草稿','save-draft','secondary')}${btn('确认与发布','open-publication','')}</div>`;}
 function knowledge(){
  const ks=state.draft.knowledge;return `<div class="page-pad"><h1 class="page-title">常问的问题，认真回答。</h1><p class="page-description">适合所有客人的问题和答案，编辑后再公开。</p><p class="version-line">${state.published.profilePending?`接待指引 ${state.published.knowledge.filter(k=>k.requiresHuman!==false&&k.kind==='confirmation_guide').length} 条 · 已确认公开答复 ${state.published.knowledge.filter(k=>k.requiresHuman===false||k.kind!=='confirmation_guide').length} 条`:`已生效 ${state.published.knowledge.length} 条`} · 草稿 ${ks.length} 条${state.draftDirty?' · 有未发布修改':''}</p>${btn(icon('plus')+' 新增公开问答','new-knowledge','secondary wide')}${ks.length?ks.map(k=>`<article class="knowledge-item"><h3>${esc(k.question)}</h3>${k.kind==='confirmation_guide'?`<p class="tag">${esc(k.id)} · ${k.requiresHuman!==false?'接待指引，店规待确认':'商家已确认公开答复'}</p>`:''}<p>${esc(k.text)}</p>${k.aliases.length?`<p>相似问法：${k.aliases.map(esc).join('、')}</p>`:''}<div style="display:flex;justify-content:space-between"><button class="text-btn" data-action="edit-knowledge" data-knowledge="${k.id}">${icon('edit')} 编辑问答</button><button class="text-btn" data-action="delete-knowledge" data-knowledge="${k.id}">删除</button></div></article>`).join(''):`<div class="empty-state">${icon('book')}<h2>还没有额外的公开问答</h2><p>厨房、停车、入住规则已从民宿资料回答。<br>其他高频问题，可从这里添加。</p></div>`}<p class="notice">保存后仍是草稿。明确发布后，AI才会在新提问中使用；历史对话保留原答复。</p>${btn('发布已保存的资料与问答','publish-knowledge','wide',state.draftDirty?'':'disabled')}<button class="text-btn" data-action="nav" data-route="merchant/editor">查看民宿资料草稿 ${icon('arrow')}</button></div>`;
 }
 function knowledgeEditor(){
  const k=knowledgeCache||{question:'',text:'',aliases:[]};
- return `<div class="page-pad"><h1 class="page-title">整理一条公开问答</h1><p class="page-description">请编辑为适合所有客人阅读的规则，去掉个人信息和单次特殊承诺。</p><form id="knowledge-form"><label class="field">客人会怎么问<input id="knowledge-question" name="question" maxlength="200" value="${esc(k.question)}" placeholder="例如：可以带宠物吗" required></label><label class="field">可以公开的答案<textarea id="knowledge-answer" name="answer" maxlength="1000" required placeholder="请按本店实际规则填写…" style="min-height:170px">${esc(k.text)}</textarea></label><label class="field">其他相似问法<textarea id="knowledge-aliases" name="aliases" placeholder="每行一个，最多5个">${esc((k.aliases||[]).join('\n'))}</textarea><small>本地演示按完整问题或这些问法匹配；不是通用大模型。</small></label><p class="notice warning">厨房、停车等已有使用规则优先。若需调整，请编辑民宿资料中的对应规则。</p>${k.kind==='confirmation_guide'?`<label class="field guide-confirm"><span><input type="checkbox" name="still-needs-confirmation" ${k.requiresHuman!==false?'checked':''}> 答复仍需管家确认</span><small>只有已核实本房源规则、适用条件和对客范围后，才取消勾选。保存后仍须明确发布。</small></label>`:''}<button class="btn wide" type="submit">保存问答草稿</button></form></div>`;
+ return `<div class="page-pad"><h1 class="page-title">整理一条公开问答</h1><p class="page-description">请编辑为适合所有客人阅读的规则，去掉个人信息和单次特殊承诺。</p>${k.fromTicketId?'<p class="notice">原个案回复仍留在原会话。请重新编写通用公开问答，不自动复制个人信息、特殊费用或服务承诺。</p>':''}<form id="knowledge-form"><label class="field">客人会怎么问<input id="knowledge-question" name="question" maxlength="200" value="${esc(k.question)}" placeholder="例如：可以带宠物吗" required></label><label class="field">可以公开的答案<textarea id="knowledge-answer" name="answer" maxlength="1000" required placeholder="请按本店实际规则填写…" style="min-height:170px">${esc(k.text)}</textarea></label><label class="field">其他相似问法<textarea id="knowledge-aliases" name="aliases" placeholder="每行一个，最多5个">${esc((k.aliases||[]).join('\n'))}</textarea><small>本地演示按完整问题或这些问法匹配；不是通用大模型。</small></label><p class="notice warning">厨房、停车等已有使用规则优先。若需调整，请编辑民宿资料中的对应规则。</p>${k.kind==='confirmation_guide'?`<label class="field guide-confirm"><span><input type="checkbox" name="still-needs-confirmation" ${k.requiresHuman!==false?'checked':''}> 答复仍需管家确认</span><small>只有已核实本房源规则、适用条件和对客范围后，才取消勾选。保存后仍须明确发布。</small></label>`:''}<button class="btn wide" type="submit">保存问答草稿</button></form></div>`;
 }
 function fillKnowledge(){/* The template reads cached public text, never internal ticket identifiers. */}
 function platform(){
@@ -403,26 +451,18 @@ document.addEventListener('click',e=>{
  if(a==='accept'){if(mutate({type:'ACCEPT',ticketId:b.dataset.ticket})){render();toast('已接手，填写实际答复后发送。');}return;}
  if(a==='view-reply'){const t=state.tickets[b.dataset.ticket],thread=state.threads[t?.threadId],unit=t?.context?.unitId||'all',owner=activePropertyId==='legacy'&&unit==='all'?sessionId:sessionId+':'+activePropertyId+':'+unit;if(!thread||thread.owner!==owner){toast('只能从原客人演示身份查看回复；商家可使用只读会话预览。');return;}const u=new URL(location.href);u.searchParams.delete('share');if(unit!=='all')u.searchParams.set('unit',unit);else u.searchParams.delete('unit');u.hash=t.context?.scope==='local'?'/guest/life-chat':'/guest/chat';location.href=u.href;return;}
  if(a==='ticket-knowledge'){
-  const t=state.tickets[b.dataset.ticket];knowledgeCache={question:t.question,text:t.reply.body,aliases:[]};go('merchant/knowledge-edit');return;
+  const t=state.tickets[b.dataset.ticket];knowledgeCache={question:'',text:'',aliases:[],fromTicketId:t.id};go('merchant/knowledge-edit');return;
  }
  if(a==='save-draft'){
   const d=readEditor();editorCache=d;if(mutate({type:'SAVE_DRAFT',draft:d})){editorCache=null;render();toast('草稿已保存，客人端尚未改变。');}return;
  }
- if(a==='publish-editor'){
-  const d=readEditor();editorCache=d;
-  showDialog('发布民宿资料',`<p class="dialog-copy">发布后，这家民宿的客人页面和AI新答复会使用当前表单资料，以及已经保存的问答草稿。\n\n历史对话保留原答复和当时依据。</p><div class="dialog-actions">${btn('再检查一下','close-dialog','outline')}${btn('确认发布','dialog-confirm','')}</div>`,()=>{
-   // One durable write: a failed publication cannot leave a half-saved draft.
-   try{const candidate=dispatch(state,{type:'SAVE_DRAFT',draft:d},{role:'merchant',sessionId});const published=dispatch(candidate,{type:'PUBLISH'},{role:'merchant',sessionId});if(saveWorkspace(replaceProperty(workspace,activePropertyId,published))){editorCache=null;render();toast('已发布 V'+state.published.version+'，新咨询会使用新资料。');}}catch(e){toast('未发布：'+e.message+'，表单已保留。');}
-  });return;
- }
+ if(a==='publish-editor'){go('merchant/publication');return;}
  if(a==='new-knowledge'){knowledgeCache={question:'',text:'',aliases:[]};go('merchant/knowledge-edit');return;}
  if(a==='edit-knowledge'){knowledgeCache=structuredClone(state.draft.knowledge.find(k=>k.id===b.dataset.knowledge));go('merchant/knowledge-edit');return;}
  if(a==='delete-knowledge'){
   showDialog('从草稿中删除问答',`<p class="dialog-copy">删除后需要再次发布，才会从客人使用的资料中移除。历史对话不会被删除。</p><div class="dialog-actions">${btn('保留','close-dialog','outline')}${btn('删除草稿条目','dialog-confirm','')}</div>`,()=>{if(mutate({type:'DELETE_KNOWLEDGE',knowledgeId:b.dataset.knowledge})){render();toast('已从草稿中删除，发布后生效。');}});return;
  }
- if(a==='publish-knowledge'){
-  showDialog('发布本店资料与问答',`<p class="dialog-copy">将发布所有已保存的民宿资料和问答草稿，新的提问使用公开版本 V${state.published.version+1}。\n\n人工会话内容不会自动公开。</p><div class="dialog-actions">${btn('再检查一下','close-dialog','outline')}${btn('确认发布','dialog-confirm','')}</div>`,()=>{if(mutate({type:'PUBLISH'},'merchant')){render();toast('公开资料已更新至 V'+state.published.version);}});return;
- }
+ if(a==='publish-knowledge'){go('merchant/publication');return;}
  if(a==='vr-settings'){
   showDialog('VR资料',`<p class="dialog-copy">当前素材类型：第三方参考案例\n\n${esc(state.draft.vrUrl)}\n\n来源：途家 / 如视\n\n此案例只演示全景体验，不与当前民宿房间、设施绑定。当前尚未提供本店真实VR素材。</p><a class="btn secondary wide" style="margin-top:20px" href="${esc(state.draft.vrUrl)}" target="_blank" rel="noopener noreferrer">查看指定VR参考 ${icon('external')}</a>`);return;
  }
@@ -437,33 +477,34 @@ document.addEventListener('click',e=>{
  }
 });
 document.addEventListener('input',e=>{
- if(e.target.id==='life-chat-input'){lifeDraft=e.target.value;saveLifeDraft();const b=$('#life-chat-form .send-button');if(b)b.disabled=!lifeDraft.trim();}
- if(e.target.id==='chat-input'){composer.body=e.target.value;saveComposer();const send=$('.send-button');if(send)send.disabled=!composer.body.trim()||!state.visible||!sessionId;}
+ if(e.target.closest('#guide-editor-form,#recommendation-form'))maintenanceDirty=true;
+ if(e.target.getAttribute('id')==='life-chat-input'){lifeDraft=e.target.value;saveLifeDraft();const b=$('#life-chat-form .send-button');if(b)b.disabled=!lifeDraft.trim();}
+ if(e.target.getAttribute('id')==='chat-input'){composer.body=e.target.value;saveComposer();const send=$('.send-button');if(send)send.disabled=!composer.body.trim()||!state.visible||!sessionId;}
  if(e.target.closest('#property-form'))editorCache=readEditor();
- if(e.target.id==='reply-body')replyCache[parts()[2]]=e.target.value;
+ if(e.target.getAttribute('id')==='reply-body')replyCache[parts()[2]]=e.target.value;
  if(e.target.closest('#vr-form')){const f=new FormData($('#vr-form'));vrCache={...structuredClone(state.draft),vrLabel:String(f.get('vrLabel')),vrDescription:String(f.get('vrDescription'))};}
  if(e.target.closest('#knowledge-form')){const f=new FormData($('#knowledge-form'));knowledgeCache={...knowledgeCache,question:String(f.get('question')),text:String(f.get('answer')),aliases:String(f.get('aliases')).split('\n').map(x=>x.trim()).filter(Boolean)};}
 });
 document.addEventListener('submit',e=>{
  if(handleExtraSubmit(e))return;
- if(e.target.id==='vr-form'){
+ if(e.target.getAttribute('id')==='vr-form'){
   e.preventDefault();const f=new FormData(e.target),d={...structuredClone(state.draft),vrLabel:String(f.get('vrLabel')).trim(),vrDescription:String(f.get('vrDescription')).trim()};
   if(mutate({type:'SAVE_DRAFT',draft:d},'merchant')){vrCache=null;render();toast('VR资料草稿已保存，发布后影响客人端。');}return;
  }
- if(e.target.id==='chat-form'){
+ if(e.target.getAttribute('id')==='chat-form'){
   e.preventDefault();const body=composer.body.trim();if(!body)return;
   if(mutate({type:'ASK',body,context:composer.context,operation:crypto.randomUUID()},'guest')){composer.body='';saveComposer();render();$('#chat-input')?.focus({preventScroll:true});}return;
  }
- if(e.target.id==='reply-form'){
+ if(e.target.getAttribute('id')==='reply-form'){
   e.preventDefault();const ticketId=e.target.dataset.ticket,body=$('#reply-body').value;
   if(mutate({type:'REPLY',ticketId,body},'merchant')){delete replyCache[ticketId];render();toast('人工答复已回到客人原会话。');}return;
  }
- if(e.target.id==='knowledge-form'){
+ if(e.target.getAttribute('id')==='knowledge-form'){
   e.preventDefault();const f=new FormData(e.target);
   if(mutate({type:'SAVE_KNOWLEDGE',knowledgeId:knowledgeCache?.id,...(knowledgeCache?.kind==='confirmation_guide'?{requiresHuman:f.has('still-needs-confirmation')}:{}),question:String(f.get('question')),text:String(f.get('answer')),aliases:String(f.get('aliases')).split('\n').map(x=>x.trim()).filter(Boolean)},'merchant')){knowledgeCache=null;go('merchant/knowledge');toast('问答草稿已保存，发布后才参与AI回答。');}
  }
 });
-document.addEventListener('keydown',e=>{if(e.target.id==='chat-input'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('#chat-form').requestSubmit();}});
+document.addEventListener('keydown',e=>{if(e.target.getAttribute('id')==='chat-input'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('#chat-form').requestSubmit();}});
 $('#detail-dialog').addEventListener('click',e=>{if(e.target===$('#detail-dialog'))closeDialog();});
 $('#detail-dialog').addEventListener('cancel',()=>{dialogAction=null;});
 window.addEventListener('hashchange',()=>{if($('#detail-dialog').open)closeDialog();render();});

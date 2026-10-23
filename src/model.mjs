@@ -1,6 +1,7 @@
 import {matchQinghuanGuides,analyzeQinghuanQuestion} from './qinghuan.mjs';
 import {requestedScopes,scopeLabel,scopeKey,relevantFacts,intersection,difference,configurationQuestion,precautions} from './answer-scopes.mjs';
 import {answerExperience,answerState,contextIssue,answerKind,originalGuideQuestion,canonicalCoreContext} from './experience-answer.mjs';
+import {confirmDraft,invalidateDraftConfirmation,publicationStatus} from './publication.mjs';
 
 const clone=x=>structuredClone(x);
 const own=(obj,key)=>Object.hasOwn(obj,key);
@@ -174,7 +175,7 @@ function validateDraft(d){
 export function dispatch(state,action,ctx){
  const {type}=action;
  if(!ctx?.sessionId)throw Error('无法保持演示会话，请启用浏览器会话存储');
- const guestActions=['ASK','HANDOFF'],merchantActions=['REPLY','ACCEPT','SAVE_DRAFT','PUBLISH','SAVE_KNOWLEDGE','DELETE_KNOWLEDGE'];
+ const guestActions=['ASK','HANDOFF'],merchantActions=['REPLY','ACCEPT','SAVE_DRAFT','CONFIRM_DRAFT','PUBLISH','SAVE_KNOWLEDGE','DELETE_KNOWLEDGE'];
  if(guestActions.includes(type)&&ctx.role!=='guest')throw Error('请从客人端操作');
  if(merchantActions.includes(type)&&ctx.role!=='merchant')throw Error('请从商家端操作');
  if(type==='SET_VISIBLE'&&ctx.role!=='platform')throw Error('请从平台端操作');
@@ -212,7 +213,12 @@ export function dispatch(state,action,ctx){
    s.threads[ticket.threadId].messages.push(m);ticket.status='replied';ticket.reply=m;
   }
  }
- if(type==='SAVE_DRAFT'){validateDraft(action.draft);s.draft=clone(action.draft);s.draftDirty=true;}
+ if(type==='SAVE_DRAFT'){
+  validateDraft(action.draft);
+  const scope=s.draft.experience?.propertyId??s.published.experience?.propertyId;
+  if(scope&&action.draft.experience?.propertyId!==scope)throw Error('草稿资料结构或房源归属不一致，不能移除或更换本房源内容范围');
+  s.draft=invalidateDraftConfirmation(action.draft,s.draft);s.draftDirty=true;
+ }
  if(type==='SAVE_KNOWLEDGE'){
   const knowledgeId=action.knowledgeId??id(),idx=s.draft.knowledge.findIndex(x=>x.id===knowledgeId),previous=s.draft.knowledge[idx];
   const k={...previous,id:knowledgeId,question:text(action.question,'公开问题',200),text:text(action.text,'公开答案'),aliases:(action.aliases??[]).map(a=>text(a,'相似问法',200))};
@@ -221,10 +227,20 @@ export function dispatch(state,action,ctx){
    k.requiresHuman=own(action,'requiresHuman')?action.requiresHuman:previous.requiresHuman!==false;
   }
   if(idx<0)s.draft.knowledge.push(k);else s.draft.knowledge[idx]=k;
-  validateDraft(s.draft);s.draftDirty=true;
+  validateDraft(s.draft);s.draft=invalidateDraftConfirmation(s.draft,state.draft);s.draftDirty=true;
  }
- if(type==='DELETE_KNOWLEDGE'){s.draft.knowledge=s.draft.knowledge.filter(k=>k.id!==action.knowledgeId);s.draftDirty=true;}
- if(type==='PUBLISH'){validateDraft(s.draft);s.published={...clone(s.draft),version:s.published.version+1,publishedAt:now};s.draftDirty=false;}
+ if(type==='DELETE_KNOWLEDGE'){s.draft.knowledge=s.draft.knowledge.filter(k=>k.id!==action.knowledgeId);s.draft=invalidateDraftConfirmation(s.draft,state.draft);s.draftDirty=true;}
+ if(type==='CONFIRM_DRAFT'){
+  validateDraft(s.draft);
+  if(s.published.experience?.propertyId&&s.draft.experience?.propertyId!==s.published.experience.propertyId)throw Error('草稿房源归属不一致，请先核对资料');
+  s.draft=confirmDraft(s.draft,action,now);s.draftDirty=true;
+ }
+ if(type==='PUBLISH'){
+  validateDraft(s.draft);
+  if(s.published.experience?.propertyId&&s.draft.experience?.propertyId!==s.published.experience.propertyId)throw Error('草稿房源归属不一致，请先核对资料');
+  if(s.draft.experience&&!publicationStatus(s,now).confirmed)throw Error('请先确认本次测试内容；确认后若有资料变更，需要重新确认再发布');
+  s.published={...clone(s.draft),version:s.published.version+1,publishedAt:now};s.draftDirty=false;
+ }
  if(type==='SET_VISIBLE')s.visible=Boolean(action.visible);
  if(operationKey)s.operations[operationKey]=true;
  s.revision++;return s;

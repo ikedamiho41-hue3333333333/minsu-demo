@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyExperience,contentRecord} from '../src/experience.mjs';
+import {readRecommendationForm} from '../src/recommendations.mjs';
 
 const ui=await import('../src/recommendations-ui.mjs').catch(()=>({}));
 const scope={propertyId:'test-property',unitId:'test-room'};
@@ -90,4 +91,65 @@ test('reopening ISO validity dates keeps a valid local datetime input that prese
  const html=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'place',id:'tea'});
  const value=html.match(/name="validUntil"[^>]+value="([^"]*)"/)?.[1];
  assert.match(value,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);assert.equal(Date.parse(value),Date.parse(iso));
+});
+
+test('recommendation scope uses room names and only offers the current property units with stable selections',()=>{
+ const snapshot=fixture();snapshot.rentalMode='room';snapshot.rooms=[{id:'room-a',name:'听雨大床房'},{id:'room-b',name:'望庭双床房',enabled:false},{id:'foreign-room',propertyId:'other-property',name:'不该展示的外店房间'}];
+ snapshot.experience.recommendations.places[0].unitId='room-b';
+ const html=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'place',id:'tea'}),unit=html.match(/<select name="unitId">([\s\S]*?)<\/select>/)?.[1];
+ assert.ok(unit,'unit scope must be selected by room name');assert.match(unit,/<option value=""[^>]*>本房源全部单元/);
+ assert.match(unit,/<option value="room-a"[^>]*>听雨大床房/);assert.match(unit,/<option value="room-b"[^>]*selected[^>]*>望庭双床房.*停用/);
+ assert.doesNotMatch(unit,/foreign-room|不该展示的外店房间|value="whole"/);
+ snapshot.rentalMode='whole';const whole=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'place',id:'tea'});
+ assert.match(whole,/<option value="whole"[^>]*>整院/);
+});
+
+test('place associations use named distinct checkboxes even for duplicates and parent names exclude self and foreign records',()=>{
+ const snapshot=fixture();snapshot.experience.recommendations.places[1].name='测试茶室';snapshot.experience.recommendations.places[1].enabled=false;
+ snapshot.experience.recommendations.places.push(contentRecord('foreign-place','other-property',{name:'不该展示的外店地点'}));
+ const routeHtml=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'route',id:'route-half'});
+ assert.match(routeHtml,/<input type="hidden" name="placeIds" value="">/);
+ assert.match(routeHtml,/<input type="checkbox" name="placeIds" value="tea"[^>]*checked[^>]*>[^<]*测试茶室[^<]*已确认/);
+ assert.match(routeHtml,/<input type="checkbox" name="placeIds" value="gallery"[^>]*>[^<]*测试茶室[^<]*停用/);
+ assert.match(routeHtml,/<input type="checkbox" name="placeIds" value="pending"[^>]*>[^<]*待确认/);
+ assert.doesNotMatch(routeHtml,/name="placeIds" value="foreign-place"|不该展示的外店地点/);
+ snapshot.experience.recommendations.places[0].parentPlaceId='gallery';
+ const placeHtml=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'place',id:'tea'}),parents=placeHtml.match(/<select name="parentPlaceId">([\s\S]*?)<\/select>/)?.[1];
+ assert.ok(parents);assert.match(parents,/<option value=""[^>]*>无父场所/);assert.match(parents,/<option value="gallery"[^>]*selected[^>]*>测试茶室/);
+ assert.doesNotMatch(parents,/value="tea"|foreign-place/);
+});
+
+test('multiple named route selections survive save and reopen with both stable ids checked',()=>{
+ const snapshot=fixture(),previous=snapshot.experience.recommendations.routes[0],form=new FormData();
+ for(const [key,value] of [['kind','route'],['id','route-half'],['name','两站测试路线'],['placeIds',''],['placeIds','tea'],['placeIds','gallery']])form.append(key,value);
+ const saved=readRecommendationForm(form,previous,'test-property');assert.deepEqual(saved.placeIds,['tea','gallery']);
+ snapshot.experience.recommendations.routes[0]=saved;
+ const html=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'route',id:'route-half'});
+ for(const id of ['tea','gallery'])assert.match(html,new RegExp(`<input type="checkbox" name="placeIds" value="${id}"[^>]*checked`));
+ assert.match(html,/测试茶室/);assert.match(html,/测试画廊/);
+});
+
+test('missing saved relationships remain explicit unknown choices rather than silently selecting another record',()=>{
+ const snapshot=fixture(),place=snapshot.experience.recommendations.places[0];place.unitId='removed-room';place.parentPlaceId='removed-parent';
+ const route=snapshot.experience.recommendations.routes[0];route.placeIds=['tea','removed-stop'];
+ const placeHtml=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'place',id:'tea'});
+ assert.match(placeHtml,/<option value="removed-room"[^>]*selected[^>]*>[^<]*缺失|<option value="removed-room"[^>]*selected[^>]*>[^<]*未知/);
+ assert.match(placeHtml,/<option value="removed-parent"[^>]*selected[^>]*>[^<]*缺失|<option value="removed-parent"[^>]*selected[^>]*>[^<]*未知/);
+ const routeHtml=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'route',id:'route-half'});
+ assert.match(routeHtml,/<input type="checkbox" name="placeIds" value="removed-stop"[^>]*checked[^>]*>[^<]*(缺失|未知)/);
+});
+
+test('reopening an existing route preserves its chosen stop order during an unchanged checkbox submission',()=>{
+ const snapshot=fixture(),previous=snapshot.experience.recommendations.routes[0];previous.placeIds=['gallery','tea'];
+ const html=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'route',id:'route-half'});
+ const selected=[...html.matchAll(/<input type="checkbox" name="placeIds" value="([^"]*)"[^>]*checked/g)].map(match=>match[1]);
+ assert.deepEqual(selected,['gallery','tea']);
+ const form=new FormData();form.append('kind','route');form.append('id','route-half');form.append('placeIds','');for(const id of selected)form.append('placeIds',id);
+ assert.deepEqual(readRecommendationForm(form,previous,'test-property').placeIds,['gallery','tea']);
+});
+
+test('an invalid saved self-parent is explained instead of reintroduced as a parent choice',()=>{
+ const snapshot=fixture();snapshot.experience.recommendations.places[0].parentPlaceId='tea';
+ const html=ui.recommendationEditorMarkup(snapshot,'test-property',{kind:'place',id:'tea'}),parents=html.match(/<select name="parentPlaceId">([\s\S]*?)<\/select>/)?.[1];
+ assert.doesNotMatch(parents,/value="tea"/);assert.match(parents,/<option value=""[^>]*selected/);assert.match(html,/自身|自己/);
 });

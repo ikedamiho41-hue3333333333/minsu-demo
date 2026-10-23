@@ -20,10 +20,19 @@ function placesFor(snapshot,scope,now){
  const items=collection(snapshot,scope,'places');
  return items.filter(item=>available(item,scope,now)&&findUnique(items,item.id)===item);
 }
+export function routeTimingIssue(route,places){
+ const candidates=Array.isArray(places)?places:[],ids=Array.isArray(route?.placeIds)?route.placeIds:[];
+ const stops=ids.map(id=>candidates.find(place=>place?.id===id&&(!route.propertyId||place.propertyId===route.propertyId))).filter(Boolean);
+ const fullDay=route?.period==='half'&&stops.find(place=>place.period==='day');
+ if(fullDay)return `半天路线不能包含按一天安排的项目：${fullDay.name||'该地点'}。`;
+ const knownMinutes=stops.reduce((sum,place)=>sum+(Number.isFinite(place.durationMinutes)&&place.durationMinutes>0?place.durationMinutes:0),0);
+ if(Number.isFinite(route?.durationMinutes)&&route.durationMinutes>0&&knownMinutes-route.durationMinutes>1e-9)return `各站已知停留时长合计${knownMinutes}分钟，超过路线${route.durationMinutes}分钟；请调整站点或路线时长，尚未计入往返交通。`;
+ return '';
+}
 function routeAvailable(route,places,scope,now){
  return available(route,scope,now)&&!!periods[route.period]&&Number.isFinite(route.durationMinutes)&&route.durationMinutes>0
   &&(route.period!=='half'||route.durationMinutes<=240)&&Array.isArray(route.placeIds)&&route.placeIds.length>0
-  &&route.placeIds.every(id=>places.some(place=>place.id===id));
+  &&route.placeIds.every(id=>places.some(place=>place.id===id))&&!routeTimingIssue(route,places);
 }
 export function recommendedPlaceById(id,snapshot,scope,{now=Date.now()}={}){
  const item=findUnique(placesFor(snapshot,scope,now),id);return item?copy(item):null;
@@ -95,6 +104,10 @@ function number(form,key,previous,label,max){
 }
 function checked(form,key){return form.has(key)&&!['false','0','off',''].includes(String(form.get(key)));}
 function date(form,key,previous){const raw=value(form,key,previous);if(raw&&!Number.isFinite(Date.parse(raw)))throw Error('有效期日期格式不正确');return raw||null;}
+function placeIds(form,previous){
+ const values=form.has('placeIds')?form.getAll('placeIds'):Array.isArray(previous?.placeIds)?previous.placeIds:[previous?.placeId].filter(Boolean);
+ return [...new Set(values.flatMap(raw=>String(raw).split(/[,，\n]/)).map(id=>id.trim()).filter(Boolean))];
+}
 export function readRecommendationForm(form,previous,propertyId){
  if(typeof propertyId!=='string'||!propertyId.trim())throw Error('房源身份缺失');
  if(previous&&previous.propertyId!==propertyId)throw Error('资料不属于当前房源');
@@ -116,15 +129,13 @@ export function readRecommendationForm(form,previous,propertyId){
  if(result.validFrom&&result.validUntil&&Date.parse(result.validUntil)<Date.parse(result.validFrom))throw Error('有效结束日期不能早于开始日期');
  for(const field of ['transport','booking','fee'])result[field+'Confirmed']=checked(form,field+'Confirmed');
  if(kind==='route'){
-  result.placeIds=[...new Set(value(form,'placeIds',null,previous?.placeIds?.join(',')??'').split(/[,，\n]/).map(item=>item.trim()).filter(Boolean))];
-  if(!result.placeIds.length)throw Error('请填写路线地点编号');
+  result.placeIds=placeIds(form,previous);
   if(!result.period||!result.durationMinutes)throw Error('请填写路线适用半天或一天及自己的建议时长');
   if(result.period==='half'&&result.durationMinutes>240)throw Error('半天路线建议时长需在240分钟以内，请另做半日安排或选择一天');
  }
  if(kind==='benefit'){
-  result.placeIds=[...new Set(value(form,'placeIds',null,previous?.placeIds?.join(',')??previous?.placeId??'').split(/[,，\n]/).map(item=>item.trim()).filter(Boolean))];
+  result.placeIds=placeIds(form,previous);
   result.placeId=form.has('placeId')?value(form,'placeId',null):form.has('placeIds')?result.placeIds[0]||'':previous?.placeId||result.placeIds[0]||'';
-  if(!result.placeId)throw Error('请填写权益适用的地点编号');
  }
  result.confirmation={status:'pending',by:'',at:''};
  return result;

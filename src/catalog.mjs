@@ -2,6 +2,7 @@ import {createSeed} from './model.mjs';
 import {createLife} from './local-life.mjs';
 import {QINGHUAN_QUESTIONS} from './qinghuan.mjs';
 import {emptyExperience} from './experience.mjs';
+import {invalidateDraftConfirmation} from './publication.mjs';
 const clone=x=>structuredClone(x);
 const own=(o,k)=>typeof k==='string'&&Object.hasOwn(o,k);
 const rentalModes=new Set(['pending','room','whole']);
@@ -11,12 +12,19 @@ function text(value,label,max=200){
 }
 function rentalMode(value){if(!rentalModes.has(value))throw Error('请选择待确认、按间出租或整院包栋');return value;}
 function ownedEntry(w,merchantId,pid){const p=entry(w,pid);if(p.merchantId!==merchantId)throw Error('只能修改当前商家的房源');return p;}
+export function setPropertyVisibility(w,merchantId,pid,visible){
+ const current=ownedEntry(w,merchantId,pid);
+ if(typeof visible!=='boolean')throw Error('请明确选择房源展示状态');
+ if(current.state.visible===visible)return w;
+ const next=clone(w),state=next.properties[pid].state;
+ state.visible=visible;state.revision++;next.revision++;return next;
+}
 function editDraft(w,merchantId,pid,edit){
  ownedEntry(w,merchantId,pid);
  const next=clone(w),state=next.properties[pid].state;
  edit(state.draft,next);
  if(state.draft.experience?.propertyId!==pid)state.draft.experience=emptyExperience(pid);
- state.draft.experience.confirmation={status:'pending',by:'',at:''};
+ state.draft=invalidateDraftConfirmation(state.draft,w.properties[pid].state.draft);
  state.draftDirty=true;state.revision++;next.revision++;
  return next;
 }
@@ -119,26 +127,40 @@ export function shareUrl(w,{merchantId,propertyId,unitId,baseUrl}){
  const p=entry(w,propertyId);if(p.merchantId!==merchantId)throw Error('只能分享当前商家的房源');
  if(!p.state.visible)throw Error('房源已暂停展示，不能生成看房链接');
  if(!shareUnits(w,propertyId).some(u=>u.id===unitId))throw Error('出租单元不存在或经营方式已变化');
- const url=new URL(baseUrl),mobile=url.searchParams.get('mobile')==='1';url.search='';if(mobile)url.searchParams.set('mobile','1');url.searchParams.set('property',propertyId);url.searchParams.set('unit',unitId);url.searchParams.set('share','1');url.hash='/guest/home';return url.href;
+ const url=new URL(baseUrl),mobile=url.searchParams.get('mobile')==='1';url.search='';if(mobile)url.searchParams.set('mobile','1');url.searchParams.set('property',propertyId);url.searchParams.set('unit',unitId);url.searchParams.set('share','1');url.searchParams.set('generation',String(shareGeneration(p)));url.hash='/guest/home';return url.href;
 }
+const shareGeneration=entry=>Number.isSafeInteger(entry.shareGeneration)&&entry.shareGeneration>=0?entry.shareGeneration:0;
 export function resolveTarget(w,search){
  const q=new URLSearchParams(search),propertyId=q.get('property')||'lake-inn',unitId=q.get('unit');
  if(!own(w.properties,propertyId))return {ok:false,propertyId,message:'这条看房链接的房源已不存在，请联系民宿管家。'};
  if(!w.properties[propertyId].state.visible)return {ok:false,propertyId,unitId,message:'此房源已暂停展示，请联系民宿管家确认。'};
  if(q.get('share')==='1'&&!unitId)return {ok:false,propertyId,message:'看房链接缺少房间或整院信息，请向管家获取完整链接。'};
+ if(unitId||q.get('share')==='1'||q.has('generation')){
+  const actual=shareGeneration(w.properties[propertyId]),raw=q.get('generation');
+  if(raw===null?actual!==0:!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw))||Number(raw)!==actual)return {ok:false,propertyId,unitId,message:'此分享链接的出租方式版本已失效，请向管家获取新的二维码或链接。'};
+ }
  if(unitId&&w.properties[propertyId].state.published.rooms.some(room=>room.id===unitId&&room.enabled===false))return {ok:false,propertyId,unitId,message:'此房间已停用，原看房链接已失效，请向管家获取新链接。'};
  if(unitId&&!shareUnits(w,propertyId).some(u=>u.id===unitId))return {ok:false,propertyId,message:'这个房间或整院的分享链接已失效，可能是经营方式发生了变化。请向管家获取新链接。'};
  return {ok:true,propertyId,unitId,customer:q.get('share')==='1'};
 }
 export function replaceProperty(w,pid,nextState){
  const p=entry(w,pid);if(nextState.propertyId!==p.state.propertyId)throw Error('房源归属不一致');
- const n=clone(w);n.properties[pid].state=clone(nextState);if(rentalModes.has(nextState.published.rentalMode))n.properties[pid].rentalMode=nextState.published.rentalMode;n.revision++;return n;
+ const n=clone(w),next=n.properties[pid],previousMode=p.state.published.rentalMode??p.rentalMode;
+ next.state=clone(nextState);
+ if(rentalModes.has(nextState.published.rentalMode)){
+  next.rentalMode=nextState.published.rentalMode;
+  if(next.rentalMode!==previousMode){next.shareGeneration=shareGeneration(p)+1;next.lastRentalModeChange={kind:'published-draft',generation:next.shareGeneration,at:nextState.published.publishedAt};}
+ }
+ n.revision++;return n;
 }
+// Legacy immediate-update API retained for older callers; new UI edits a draft.
 export function updateRentalMode(w,merchantId,pid,mode){
  const p=entry(w,pid);if(p.merchantId!==merchantId)throw Error('只能设置当前商家的房源');
  if(!['room','whole'].includes(mode))throw Error('请选择单间出租或整院包栋');
  if(!p.state.published.rooms.length)throw Error('请先补齐真实房间资料与房源配置，再设置出租方式和生成分享链接');
- const n=clone(w),pNext=n.properties[pid];pNext.rentalMode=mode;pNext.state.draft.rentalMode=mode;pNext.state.published.rentalMode=mode;pNext.state.published.version++;pNext.state.published.publishedAt=Date.now();pNext.state.revision++;n.revision++;return n;
+ const n=clone(w),pNext=n.properties[pid];
+ if(mode!==(p.state.published.rentalMode??p.rentalMode)){pNext.shareGeneration=shareGeneration(p)+1;pNext.lastRentalModeChange={kind:'legacy-updateRentalMode',generation:pNext.shareGeneration,at:Date.now()};}
+ pNext.rentalMode=mode;pNext.state.draft.rentalMode=mode;pNext.state.published.rentalMode=mode;pNext.state.published.version++;pNext.state.published.publishedAt=Date.now();pNext.state.revision++;n.revision++;return n;
 }
 
 export function ticketPreview(w,{merchantId,propertyId,ticketId}){
