@@ -142,3 +142,12 @@ test('legacy content uses its workspace key while old state and thread identitie
  const next=run(s,'ASK',{threadId:oldThread.id,body:'这家多少钱？',context:recContext});assert.equal(next.propertyId,'songjian-demo');assert.equal(guestThreads(next,guest.sessionId)[0].id,oldThread.id);assert.equal(next.threads[oldThread.id].propertyId,'songjian-demo');assert.deepEqual(next.threads[oldThread.id].messages.slice(0,2),oldThread.messages);
  for(const propertyId of ['songjian-demo','other']){const r=answer(s,'厨房可以做饭吗？',{propertyId,roomId:'mountain'});assert.equal(r.status,'unavailable');}
 });
+
+
+test('plain punctuation and reversed clauses cannot hide unknown extra needs behind a known guide or place',()=>{
+ const s=state();s.published.experience.guide.steps=[confirmed('curtain',{title:'窗帘操作',text:'先按左侧开关，再拉右边细绳。'})];const c={kind:'guide',id:'curtain',propertyId:pid};
+ for(const q of ['窗帘怎么用，能提供婴儿推车吗？','窗帘怎么用？能提供婴儿推车吗？','能提供婴儿推车吗，窗帘怎么用？','能提供婴儿推车吗？']){const r=answer(s,q,c);assert.equal(r.status,'needs_human',q);assert.match(r.body,/婴儿推车/);}
+ assert.equal(answer(s,'窗帘怎么用？',c).status,'answered');
+ const local=placeState();for(const q of ['想了解测试茶馆，能提供婴儿推车吗？','能提供婴儿推车吗，想了解测试茶馆']){const r=answer(local,q,placeContext(local));assert.equal(r.status,'needs_human',q);assert.match(r.body,/婴儿推车/);}
+ assert.equal(answer(local,'这家多少钱？',placeContext(local)).status,'answered');
+});

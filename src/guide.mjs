@@ -20,7 +20,7 @@ export function guideMapUrl(point,propertyId,unitId=null){
 // Legacy published facts have no record metadata. Explicit private, withdrawn,
 // wrong-property or unconfirmed records must still respect their newer metadata.
 export function guestPublishedItem(item,propertyId,unitId=null){
- if(!item||typeof item!=='object'||item.enabled===false||item.cancelled)return false;
+ if(!item||typeof item!=='object'||item.enabled===false||item.cancelled||['pending','draft','unconfirmed','disabled','cancelled','ended','expired'].includes(item.status))return false;
  if(item.propertyId&&item.propertyId!==propertyId||item.unitId&&item.unitId!==unitId)return false;
  if(item.visibility&&item.visibility!=='public')return false;
  if(item.confirmation)return publicRecord({...item,propertyId:item.propertyId??propertyId,visibility:item.visibility??'public'},propertyId,unitId);

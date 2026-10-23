@@ -68,9 +68,17 @@ function source(record,label,text,p,group,kind){
  return {key:`${group}:${kind}:${record.id}`,label,text,version:p.version,sourceLabel:record.sourceLabel||'本店当前公开资料',sourceVersion:record.sourceVersion??record.version??null,
   reference:{collection:group,kind,id:record.id,sourceLabel:record.sourceLabel||'本店当前公开资料',sourceRefs:clone(record.sourceRefs??[])},...(record.confirmation?{confirmation:clone(record.confirmation)}:{})};
 }
-function extraGuideQuestions(question,scopes){
+function unknownQuestionParts(question,knownText=''){
+ const known=norm(knownText);
+ return String(question).split(/另外|还有|顺便|以及|并且|同时|[，,。；;！？?!\n]/).map(x=>x.trim()).filter(part=>{
+  if(!/吗|能|可以|是否|提供|安排|帮|怎么|如何|有没有|有无/.test(part)||requestedScopes(part).size||isFollowUp(part))return false;
+  const subject=norm(part).replace(/请问|请|这个地点|这个地方|这家店|这条路线|这里|这个|这项|这家|有没有|有无|能否|可不可以|可以|是否|提供|安排|帮我们|帮我|怎么用|如何使用|使用方法|怎么|如何|使用|操作|能|的|吗|呢|呀|啊/g,'');
+  return subject.length>1&&!known.includes(subject);
+ });
+}
+function extraGuideQuestions(question,scopes,knownText){
  const extras=[...requestedScopes(question)].filter(scope=>!scopes.has(scope));
- const unknown=String(question).split(/另外|还有|顺便|以及|并且|同时/).slice(1).filter(part=>/吗|能|可以|是否|提供|安排|帮/.test(part)&&!requestedScopes(part).size);
+ const unknown=unknownQuestionParts(question,knownText);
  return [...extras.map(scope=>({'crib':'婴儿床','extra-bed':'加床服务',kitchen:'厨房规则',pets:'宠物规则',breakfast:'早餐',booking:'价格与预订',pickup:'接站',dropoff:'送站与叫车'}[scope]||scope)),...unknown.map(part=>`“${part.trim()}”`)];
 }
 function guideAnswer(state,question,context){
@@ -78,7 +86,7 @@ function guideAnswer(state,question,context){
  const {record,label,type,scopes}=entry,p=state.published;
  const text=type==='point'?`${label}：${record.address||'详细地址待补充。'}`:record.text||'这项资料的图文说明待补充，请向管家确认。';
  const url=safeExternalUrl(record.url),media=url?`\n资料入口：${url}（若无法加载，请使用已有图文或联系管家）`:'';
- const extras=extraGuideQuestions(question,scopes),request=answerKind(question)==='request';
+ const extras=extraGuideQuestions(question,scopes,label+' '+text),request=answerKind(question)==='request';
  const body=[`${label}\n${text}${media}`,extras.length?`额外诉求 ${extras.join('、')} 尚未由本项指南确认，请管家分别核对。`:'',request?'这是服务需求或故障咨询，需要人工核对和处理；当前仅整理问题，尚未发起预约、派修或完成服务。':''].filter(Boolean).join('\n\n');
  return {body,status:extras.length||request?'needs_human':'answered',sources:[source(record,label,text+(url?'\n'+url:''),p,'guide',type)],knowledgeIds:[],mode:'property_guide',answerKind:answerKind(question),coveredScopes:[...scopes],context:{kind:context.kind,id:record.id,label,propertyId:scopePropertyId(state),unitId:context.unitId??null,version:p.version}};
 }
@@ -120,7 +128,7 @@ function recommendationsAnswer(state,question,selected){
  const needsFee=/多少钱|价格|费用|收费|免费|人均|预算|门票/.test(question)&&!(item.feeConfirmed===true&&item.fee?.trim());
  const needsBooking=/预约|预订|报名|名额|订位/.test(question)&&!(item.bookingConfirmed===true&&item.booking?.trim());
  const localExtras=[...requestedScopes(question)].filter(value=>['crib','extra-bed','pets','kitchen','breakfast','invoice','utilities','hotwater','network','network-fault'].includes(value));
- const unknownExtras=String(question).split(/另外|还有|顺便|以及|并且|同时/).slice(1).filter(part=>/吗|能|可以|是否|提供|安排|帮/.test(part)&&!requestedScopes(part).size);
+ const unknownExtras=unknownQuestionParts(question,item.name+' '+(item.description||''));
  const remarks=[];
  if(context.kind==='route'&&/半天|两小时|三小时|2小时|3小时/.test(question)&&item.period==='day')remarks.push('这是一条完整一天安排，不能直接作为半天路线；请另选已核实的半日安排。');
  if(/雨天|下雨|不爬山/.test(question))remarks.push('天气、体力和当日开放仍需核对；本条记录没有已确认的完整替代路线，不会自动改编行程。');

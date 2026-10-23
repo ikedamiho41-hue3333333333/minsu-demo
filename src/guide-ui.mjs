@@ -29,29 +29,29 @@ export function arrivalMarkup(snapshot,propertyId,unitId=null){
 }
 
 const factLabels={parking:'停车说明',location:'位置与交通',checkin:'入住与退房',kitchen:'厨房规则',wifi:'网络与设备使用',breakfast:'早餐说明',environment:'公共空间',pets:'宠物规则',accessibility:'通行说明',barbecue:'烧烤规则',price:'费用与订单说明'};
-function legacyHandbook(p,propertyId){
- const facts=Object.entries(p.facts??{}).filter(([,item])=>guestPublishedItem(item,propertyId)).map(([key,item])=>({...item,id:`fact:${key}`,question:factLabels[key]||key,phase:handbookPhase(item,key)}));
- const knowledge=(p.knowledge??[]).filter(item=>guestPublishedItem(item,propertyId)).map(item=>({...item,phase:handbookPhase(item)}));
+function legacyHandbook(p,propertyId,unitId){
+ const facts=Object.entries(p.facts??{}).filter(([,item])=>guestPublishedItem(item,propertyId,unitId)).map(([key,item])=>({...item,id:`fact:${key}`,question:factLabels[key]||key,phase:handbookPhase(item,key)}));
+ const knowledge=(p.knowledge??[]).filter(item=>guestPublishedItem(item,propertyId,unitId)).map(item=>({...item,phase:handbookPhase(item)}));
  return GUIDE_PHASES.map(phase=>{const items=[...facts,...knowledge].filter(item=>item.phase===phase.id);return `<section class="editor-group service-phase" data-guide-phase="${phase.id}"><h2>${phase.label}</h2>${items.length?items.map(item=>{const kind=guideKind(item);return `<details class="knowledge-item service-guide"><summary>${esc(item.question)}</summary><p class="tag">${kind.label}</p><p>${multiline(item.text)}</p><p class="small muted">来源：${esc(item.sourceLabel||'本店当前公开资料')} · 公开版 v${esc(p.version??0)}</p>${ask('guide',item.id,item.question,item.question)}</details>`;}).join(''):'<p class="small muted">此阶段暂无本店公开说明，可带问题咨询管家。</p>'}</section>`;}).join('');
 }
-export function handbookMarkup(propertyId,snapshot){
- const p=publishedSnapshot(snapshot),guide=guideOf(p,propertyId),steps=publicGuideRecords(guide.steps,propertyId),media=publicGuideRecords(guide.media,propertyId);
+export function handbookMarkup(propertyId,snapshot,unitId=null){
+ const p=publishedSnapshot(snapshot),guide=guideOf(p,propertyId),steps=publicGuideRecords(guide.steps,propertyId,unitId),media=publicGuideRecords(guide.media,propertyId,unitId);
  let original='';
  if(propertyId==='qinghuan-dali'){
   // Preserve the public question when its answer awaits confirmation, while
   // keeping the unconfirmed answer itself out of the guest collection.
-  const knowledge=(p.knowledge??[]).filter(item=>guestPublishedItem({...item,confirmation:undefined,validFrom:null,validUntil:null},propertyId)).map(item=>{
-   if(guestPublishedItem(item,propertyId))return {...item};
+  const knowledge=(p.knowledge??[]).filter(item=>guestPublishedItem({...item,confirmation:undefined,validFrom:null,validUntil:null},propertyId,unitId)).map(item=>{
+   if(guestPublishedItem(item,propertyId,unitId))return {...item};
    return {...item,requiresHuman:true,text:'这道题的本店答复尚待商家确认，请向管家核对。'};
   });
-  const facts=Object.fromEntries(Object.entries(p.facts??{}).filter(([,item])=>guestPublishedItem(item,propertyId)));
+  const facts=Object.fromEntries(Object.entries(p.facts??{}).filter(([,item])=>guestPublishedItem(item,propertyId,unitId)));
   const current={...p,facts,knowledge};
   const displayKnowledge=knowledge.map(item=>{
-   const response=answer({propertyId,visible:true,published:current},item.question);
+   const response=answer({propertyId,visible:true,published:current},item.question,{unitId});
    return {...item,text:response.body,requiresHuman:response.status!=='answered'};
   });
   original=guestHandbookMarkup(propertyId,displayKnowledge).replace(/<button class="text-btn service-ask" data-action="select-guide" data-knowledge="(Q\d{2})">[^<]*<\/button>/g,(button,id)=>{const item=displayKnowledge.find(k=>k.id===id);return item?`<p class="tag">${guideKind(item).label}</p>${ask('guide',id,item.question,`${id} · ${item.question}`)}`:'';});
- }else original=legacyHandbook(p,propertyId);
+ }else original=legacyHandbook(p,propertyId,unitId);
  const extras=GUIDE_PHASES.map(phase=>{
   const phaseSteps=steps.filter(s=>handbookPhase(s)===phase.id),phaseMedia=media.filter(m=>handbookPhase(m)===phase.id);
   if(!phaseSteps.length&&!phaseMedia.length)return '';

@@ -1,3 +1,5 @@
+import {visiblePublishedItem} from './experience-answer.mjs';
+import {STORAGE_KEY,LEGACY_KEY,loadWorkspaceStorage,saveWorkspaceStorage,recoverWorkspaceStorage,inspectWorkspace,listWorkspaceBackups,readWorkspaceBackup} from './workspace-storage.mjs';
 import {setPropertyVisibility} from './catalog.mjs';
 import {buildShareArtifact} from './share-artifacts.mjs';
 import {publicationMarkup} from './publication-ui.mjs';
@@ -13,7 +15,7 @@ import {createProperty,createRoom,saveRoom,saveSpace,setDraftRentalMode} from '.
 import {createSeed,dispatch,guestThreads,TOPICS} from './model.mjs';
 import {icon} from './icons.mjs';
 import {originalConversationMarkup} from './merchant-ui.mjs';
-import {createWorkspace,shareUnits,shareUrl,resolveTarget,replaceProperty,updateRentalMode,ticketPreview,merchantPendingSummary,ensureQinghuanWorkspace} from './catalog.mjs?v=20261023-content1';
+import {createWorkspace,shareUnits,shareUrl,resolveTarget,replaceProperty,updateRentalMode,ticketPreview,merchantPendingSummary,ensureQinghuanWorkspace} from './catalog.mjs?v=20261023-v05';
 import {lifeAnswer,saveEvent,syncDemo,LIFE_PLACES} from './local-life.mjs';
 import {lifeCard,lifeHome,lifeChat,lifeComposer,eventContent,activityAdmin,activityForm,dateText,eventsPreviewMarkup} from './life-ui.mjs';
 import {isMobilePresentation,propertyUrl} from './presentation.mjs';
@@ -21,7 +23,9 @@ import {contentFor,makeContentContext,validContentContext,lifeChatKey} from './c
 import {contentHome,placeContent,routeContent,leadContent,contentContextChip} from './content-ui.mjs';
 import {serviceDeskMarkup,ticketServiceMarkup,guestHandbookMarkup} from './service-ui.mjs';
 
-const STORAGE='minsu-mini-v040',LEGACY_STORAGE='minsu-mini-v030',SESSION='minsu-mini-guest-session',DRAFT='minsu-mini-composer-v040';
+const STORAGE=STORAGE_KEY,SESSION='minsu-mini-guest-session-v050',DRAFT='minsu-mini-composer-v050';
+const storageOptions={createWorkspace,upgradeWorkspace:w=>upgradeExperience(ensureQinghuanWorkspace(w))};
+let storageState,pendingRestore=null;
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let workspace,state,target,activePropertyId,merchantId,sessionId,storageError='',composer={body:'',context:null},editorCache=null,knowledgeCache=null,vrCache=null,replyCache={},roomFilter='all',queueFilter='all',mobileOpen=false,toastTimer,lastRoute='',dialogAction=null,returnFocus=null,lifeFilter='all',lifeDraft='',lifeContext=null,lifePrevious=null,contentTab='places',contentCategory='all',contentQuery='',contentLimit=16,recommendationFilters={period:'all',party:'all'},recommendationEdit={kind:'place',id:null},previewSection='home',maintenanceDirty=false,activeShare=null,coverPromise=null;
 const customerPreview=new URLSearchParams(location.search).get('share')==='1';
@@ -31,17 +35,17 @@ fitViewport();
 window.visualViewport?.addEventListener('resize',fitViewport);
 window.addEventListener('resize',fitViewport);
 window.matchMedia('(max-width:760px)').addEventListener('change',()=>render());
-try{const raw=localStorage.getItem(STORAGE);let old=null;try{old=JSON.parse(localStorage.getItem(LEGACY_STORAGE)||'null');}catch{}workspace=raw?JSON.parse(raw):createWorkspace(old?.schema===1?old:null);if(workspace.schema!==2||!workspace.properties||!Object.keys(workspace.properties).length||!workspace.life||!Number.isInteger(workspace.revision))throw Error('invalid');}
-catch{workspace=createWorkspace();storageError='本地资料暂时无法读取，保留原数据并显示示例。请检查浏览器存储后重试。';}
-// Add only the missing Qinghuan entry; preserve every existing property, draft and conversation.
-try{const upgraded=ensureQinghuanWorkspace(workspace);if(upgraded!==workspace){localStorage.setItem(STORAGE,JSON.stringify(upgraded));workspace=upgraded;}}catch{storageError='清欢资料未能补入浏览器存储，原有资料保留。请检查存储后刷新。';}
-workspace=upgradeExperience(workspace);
+storageState=loadWorkspaceStorage(localStorage,storageOptions);
+workspace=storageState.workspace||storageOptions.upgradeWorkspace(createWorkspace());
+storageError=storageState.error||'';
 function setActive(){target=resolveTarget(workspace,location.search);activePropertyId=Object.hasOwn(workspace.properties,target.propertyId)?target.propertyId:Object.keys(workspace.properties)[0];state=workspace.properties[activePropertyId].state;merchantId=workspace.properties[activePropertyId].merchantId;}
 setActive();
 const draftKey=()=>DRAFT+':'+activePropertyId+':'+(target.unitId||'all');
-const lifeDraftKey=()=>`minsu-life-draft:${activePropertyId}:${target.unitId||'all'}`,lifeContextKey=()=>`minsu-life-context:${activePropertyId}:${target.unitId||'all'}`;
-try{sessionId=sessionStorage.getItem(SESSION);if(!sessionId){sessionId=crypto.randomUUID();sessionStorage.setItem(SESSION,sessionId);}composer=JSON.parse(sessionStorage.getItem(draftKey())||'null')||composer;lifeDraft=sessionStorage.getItem(lifeDraftKey())||(!target.unitId?sessionStorage.getItem('minsu-life-draft:'+activePropertyId):'')||'';lifeContext=JSON.parse(sessionStorage.getItem(lifeContextKey())||(!target.unitId?sessionStorage.getItem('minsu-life-context:'+activePropertyId):'')||'null');lifePrevious=JSON.parse(sessionStorage.getItem(lifeDraftKey()+':previous')||'null');}
-catch{sessionId=null;storageError='浏览器无法保留会话，暂时不能发送问题。请启用浏览器存储后刷新。';}
+const lifeDraftKey=()=>`minsu-life-draft-v050:${activePropertyId}:${target.unitId||'all'}`,lifeContextKey=()=>`minsu-life-context-v050:${activePropertyId}:${target.unitId||'all'}`;
+// Copy legacy session values once. Old pages keep their own keys and cannot rewrite this version.
+function sessionValue(key,oldKeys=[]){const value=sessionStorage.getItem(key);if(value!==null)return value;for(const oldKey of oldKeys){const old=sessionStorage.getItem(oldKey);if(old!==null){sessionStorage.setItem(key,old);return old;}}return null;}
+try{sessionId=sessionValue(SESSION,['minsu-mini-guest-session']);if(!sessionId){sessionId=crypto.randomUUID();sessionStorage.setItem(SESSION,sessionId);}composer=JSON.parse(sessionValue(draftKey(),['minsu-mini-composer-v040:'+activePropertyId+':'+(target.unitId||'all')])||'null')||composer;lifeDraft=sessionValue(lifeDraftKey(),['minsu-life-draft:'+activePropertyId+':'+(target.unitId||'all'),...(!target.unitId?['minsu-life-draft:'+activePropertyId]:[])])||'';lifeContext=JSON.parse(sessionValue(lifeContextKey(),['minsu-life-context:'+activePropertyId+':'+(target.unitId||'all'),...(!target.unitId?['minsu-life-context:'+activePropertyId]:[])])||'null');lifePrevious=JSON.parse(sessionValue(lifeDraftKey()+':previous',['minsu-life-draft:'+activePropertyId+':'+(target.unitId||'all')+':previous'])||'null');}
+catch{sessionId=null;storageError+=' 浏览器无法保留会话，暂时不能发送问题。请启用浏览器存储后刷新。';}
 const parts=()=>location.hash.replace(/^#\/?/,'').split('/');
 const role=()=>customerPreview?'guest':parts()[0]||'guest';
 const page=()=>customerPreview&&parts()[0]&&parts()[0]!=='guest'?'home':parts()[1]||'home';
@@ -55,6 +59,7 @@ function validLifeObject(context){return context?.collection==='recommendations'
 function lifeContextMarkup(){const c=validLifeObject(lifeContext);if(!c&&lifeContext)return `<div class="composer-context"><span>原提问对象暂不可用</span><button type="button" data-action="clear-life-context">移除</button></div>`;return c?.collection==='recommendations'?`<div class="composer-context"><span>正在问：${esc(c.label)}</span><button type="button" data-action="clear-life-context" aria-label="移除本地生活对象">移除</button></div>`:contentContextChip(lifeContext,lifeScope());}
 function saveLifeDraft(){try{sessionStorage.setItem(lifeDraftKey(),lifeDraft);sessionStorage.setItem(lifeContextKey(),JSON.stringify(lifeContext));sessionStorage.setItem(lifeDraftKey()+':previous',JSON.stringify(lifePrevious));}catch{}}
 function goLifeChat(body='',context=null){const next=selectDraft({body:lifeDraft,context:lifeContext,previous:lifePrevious},body||undefined,validLifeObject(context));lifeDraft=next.body;lifeContext=next.context;lifePrevious=next.previous||null;saveLifeDraft();go('guest/life-chat');}
+function guestFact(key,unitId=target.unitId||null){const item=state.published.facts?.[key];return visiblePublishedItem(item,activePropertyId,unitId)?item:null;}
 function guestProperty(){const p={...state.published,rooms:state.published.rooms.filter(r=>r.enabled!==false)};if(currentEntry().rentalMode==='room'&&target.unitId){const room=p.rooms.find(r=>r.id===target.unitId);return {...p,name:room?.name||p.name,rooms:room?[room]:[]};}return p;}
 const pending=()=>Object.values(state.tickets).filter(t=>t.status!=='replied');
 const time=n=>new Intl.DateTimeFormat('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false}).format(n);
@@ -63,10 +68,20 @@ const btn=(label,action,cls='secondary',data='')=>`<button class="btn ${cls}" da
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3600);}
 function saveComposer(){try{sessionStorage.setItem(draftKey(),JSON.stringify(composer));}catch{}}
 function saveWorkspace(next){
- try{const raw=localStorage.getItem(STORAGE);if(raw){const latest=JSON.parse(raw);if(latest.revision!==workspace.revision){workspace=latest;setActive();render();throw Error('另一窗口更新了资料，已同步；请检查后重试，输入已保留。');}}
- localStorage.setItem(STORAGE,JSON.stringify(next));workspace=next;setActive();return true;
- }catch(e){toast(e.name==='QuotaExceededError'?'浏览器空间不足，未保存本次操作，输入已保留。':e.message);return false;}
+ if(storageState.blocked){toast('原始资料已保护；请先从“备份与恢复”选择恢复方式，再保存。');return false;}
+ const inputs=[...document.querySelectorAll('form input,form textarea,form select')].map(e=>({form:e.form?.getAttribute('id'),name:e.name,value:e.value,checked:e.checked,type:e.type}));
+ const result=saveWorkspaceStorage(localStorage,next,{expectedRevision:workspace.revision});
+ if(!result.ok){storageState=result;if(result.conflict&&result.workspace){workspace=result.workspace;setActive();render();for(const item of inputs){const form=document.getElementById(item.form);const fields=form?[...form.elements].filter(e=>e.name===item.name):[];for(const el of fields){if(['checkbox','radio'].includes(item.type)){if(el.value===item.value)el.checked=item.checked;}else if(el.type!=='file')el.value=item.value;}}}else if(result.blocked){storageError=result.error;const phone=$('.phone');let banner=$('.error-banner');if(!banner&&phone){banner=document.createElement('div');banner.className='error-banner';$('.mini-header').after(banner);}if(banner)banner.innerHTML='<span>'+esc(storageError)+'</span><button type="button" data-action="storage-open">备份与恢复</button>';}toast(result.error||'未保存，输入已保留。');return false;}
+ storageState=result;workspace=result.workspace;setActive();return true;
 }
+function downloadRaw(raw,filename){if(typeof raw!=='string'){toast('没有可下载的原始资料');return;}const url=URL.createObjectURL(new Blob([raw],{type:'application/json;charset=utf-8'}));try{const link=document.createElement('a');link.href=url;link.download=filename;link.click();toast('已发起原文备份下载；请检查浏览器下载列表。');}catch{toast('浏览器未允许下载，请使用系统浏览器重试；原数据仍保留。');}finally{setTimeout(()=>URL.revokeObjectURL(url),3000);}}
+function storageDialog(){
+ let backups=[];try{backups=listWorkspaceBackups(localStorage);}catch{}
+ const raw=storageState.blocked?storageState.raw:localStorage.getItem(STORAGE);
+ showDialog('备份与恢复',`<p class="notice">${storageState.blocked?'原始存储暂时无法使用，当前只读显示独立示例。原文未覆盖。':'v0.5使用独立存储；首次打开复制旧版资料，v0.4原文保持不变。旧版后续修改不会自动合并。'}</p><button class="btn secondary wide" data-action="storage-export" ${typeof raw==='string'?'':'disabled'}>下载当前原始数据</button><label class="field storage-file">导入演示备份（JSON）<input id="storage-import" type="file" accept=".json,application/json"><small>先校验、预览范围，再确认替换；替换前自动保留当前原文。</small></label><p id="storage-status" role="status" aria-live="polite"></p><details class="storage-backups"><summary>自动保留的原文备份（${backups.length}份）</summary>${backups.map(x=>`<div class="storage-backup"><p>${esc(x.sourceKey)} · ${esc(x.createdAt)} · ${x.bytes}字节</p><button class="text-btn" data-action="storage-backup-export" data-key="${esc(x.key)}">下载此原文</button><button class="text-btn" data-action="storage-backup-restore" data-key="${esc(x.key)}">预览恢复此备份</button></div>`).join('')||'<p class="small">暂无自动备份；异常原文可从上方直接下载。</p>'}</details><div class="storage-actions"><button class="btn outline wide" data-action="storage-reload">重新读取</button><button class="text-btn" data-action="storage-fresh">保留备份，改用独立示例</button></div><p class="small muted">只处理当前浏览器；不会清除旧版存储。恢复工作区不会切换客人身份，其他身份的私有会话仍不向当前身份展示。</p>`);
+}
+function previewRestore(raw){const check=inspectWorkspace(raw);if(!check.ok){$('#storage-status').textContent='未导入：'+check.error+'。当前与旧版资料均未改动。';return;}pendingRestore=raw;const values=Object.values(check.workspace.properties),threads=values.reduce((n,p)=>n+Object.keys(p.state.threads).length,0);showDialog('确认恢复备份',`<p class="dialog-copy">已校验：${values.length}处房源，${threads}段咨询。确认后替换本浏览器v0.5工作区；当前与旧版原文先存入备份，v0.4存储不变。未保存的表单输入将被替换。</p><div class="dialog-actions">${btn('取消','close-dialog','outline')}${btn('确认恢复备份','dialog-confirm','')}</div>`,()=>applyRecovery(pendingRestore));}
+function applyRecovery(raw){const result=recoverWorkspaceStorage(localStorage,raw,storageOptions);if(result.blocked){storageState=result;storageError=result.error;render();toast(result.error);return;}location.reload();}
 function mutate(action,r=role()){
  try{if(r==='guest'&&!target.ok)throw Error('这条看房链接已失效，请联系管家');if(r==='merchant'&&currentEntry().merchantId!==merchantId)throw Error('当前商家不能修改此房源');
  if(action.type==='ASK'&&target.unitId)action={...action,context:{...action.context,unitId:target.unitId,...(currentEntry().rentalMode==='room'?{roomId:target.unitId}:{})}};
@@ -133,7 +148,7 @@ function render(){
  const prevScroll=$('.phone-body')?.scrollTop??0,prevRoute=lastRoute;lastRoute=location.hash;
  document.body.classList.toggle('customer-preview',customerPreview);
  document.body.classList.toggle('mobile-presentation',mobilePresentation());
- $('#app').innerHTML=`<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="assets/icon.svg" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.5 开发中</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon('house')} 小程序风格演示 <strong>· ${r==='guest'?'客人端':r==='merchant'?'商家端':'平台端'}</strong></span><span>${mobileOpen?'收起讲解':'演示控制'} ${icon(mobileOpen?'close':'more')}</span></button><main class="workspace">${mobilePresentation()?'':narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${target.ok||r!=='guest'?esc(state.published.name):'看房链接失效'} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon('signal')}${icon('wifi')}${icon('battery')}</span></div><header class="mini-header"><div class="mini-title">${info.back?`<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon('back')}</button>`:''}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation()&&!customerPreview?'演示入口与说明':'小程序演示说明'}">${icon('more')}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError?`<div class="error-banner">${esc(storageError)}</div>`:''}${chat||localChat?renderChat():`<div class="phone-body ${p==='vr'&&r==='guest'?'vr-body':''}" id="phone-scroll">${content()}</div>`}${noTabs?'':tabbar()}${localChat?lifeComposer(lifeDraft,lifeContextMarkup()+(lifePrevious?'<button type="button" class="text-btn restore-draft" data-action="restore-life-draft">恢复上次未发送内容</button>':''),!target.ok||!state.visible||!sessionId):chat?composerView():r==='merchant'&&p==='editor'?editorActions():''}${r==='guest'&&['room','space'].includes(p)?detailActions():''}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
+ $('#app').innerHTML=`<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="assets/icon.svg" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.5</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon('house')} 小程序风格演示 <strong>· ${r==='guest'?'客人端':r==='merchant'?'商家端':'平台端'}</strong></span><span>${mobileOpen?'收起讲解':'演示控制'} ${icon(mobileOpen?'close':'more')}</span></button><main class="workspace">${mobilePresentation()?'':narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${target.ok||r!=='guest'?esc(state.published.name):'看房链接失效'} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon('signal')}${icon('wifi')}${icon('battery')}</span></div><header class="mini-header"><div class="mini-title">${info.back?`<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon('back')}</button>`:''}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation()&&!customerPreview?'演示入口与说明':'小程序演示说明'}">${icon('more')}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError?`<div class="error-banner"><span>${esc(storageError)}</span><button type="button" data-action="storage-open">备份与恢复</button></div>`:''}${chat||localChat?renderChat():`<div class="phone-body ${p==='vr'&&r==='guest'?'vr-body':''}" id="phone-scroll">${content()}</div>`}${noTabs?'':tabbar()}${localChat?lifeComposer(lifeDraft,lifeContextMarkup()+(lifePrevious?'<button type="button" class="text-btn restore-draft" data-action="restore-life-draft">恢复上次未发送内容</button>':''),!target.ok||!state.visible||!sessionId):chat?composerView():r==='merchant'&&p==='editor'?editorActions():''}${r==='guest'&&['room','space'].includes(p)?detailActions():''}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
  if(chat||localChat){const c=$('.chat-scroll');if(c)c.scrollTop=c.scrollHeight;const body=$('.phone-body');if(body)body.scrollTop=body.scrollHeight;}
  else if(prevRoute===location.hash&&$('.phone-body'))$('.phone-body').scrollTop=prevScroll;
  if(p==='preview')for(const el of document.querySelectorAll('.draft-preview button,.draft-preview input,.draft-preview select,.draft-preview textarea,.draft-preview a')){if(el.tagName==='A'){el.removeAttribute('href');el.tabIndex=-1;el.setAttribute('aria-disabled','true');}else el.disabled=true;}
@@ -147,7 +162,7 @@ function content(){
  if(r==='guest'){
   if(!target.ok)return `<div class="page-pad"><div class="empty-state">${icon('house')}<h1 class="page-title">看房链接暂不可用</h1><p>${esc(target.message)}</p>${canReadOwnHistory()?btn('查看已有咨询记录','nav','secondary wide',`data-route="guest/chat"`):''}</div></div>`;
   if(!state.visible)return `<div class="page-pad"><div class="empty-state">${icon('house')}<h2>民宿资料暂时停止展示</h2><p>请联系民宿管家确认。恢复展示后可继续看房和咨询。</p></div>${btn('查看已有咨询','switch-chat','secondary wide')}</div>`;
-  if(p==='life')return recommendationsMarkup(state.published,lifeScope(),recommendationFilters);if(p==='recommended-place')return recommendedPlaceMarkup(parts()[2],state.published,lifeScope());if(p==='recommended-route')return recommendedRouteMarkup(parts()[2],state.published,lifeScope());if(p==='life-library')return contentHome(lifeScope(),{tab:contentTab,category:contentCategory,query:contentQuery,limit:contentLimit,eventsMarkup:eventsPreviewMarkup(workspace.life,currentCity())})||'<div class="page-pad"><h1 class="page-title">本房源暂无原稿资料库</h1><p class="notice">未将其他房源的专属资料混入本店。可从演示商家选择清欢资料预览，查看已有85条资料与5条主题路线。</p></div>';if(p==='life-place')return placeContent(parts()[2],lifeScope());if(p==='life-route')return routeContent(parts()[2],lifeScope());if(p==='life-lead')return leadContent(parts()[2],lifeScope());if(p==='handbook')return `<div class="page-pad">${handbookMarkup(activePropertyId,state.published)}</div>`;if(p==='arrival')return `<div class="page-pad">${arrivalMarkup(state.published,activePropertyId,target.unitId||null)}</div>`;if(p==='home')return home();if(p==='rooms')return rooms();if(p==='room')return roomDetail();if(p==='space')return spaceDetail();if(p==='vr')return vr();
+  if(p==='life')return recommendationsMarkup(state.published,lifeScope(),recommendationFilters);if(p==='recommended-place')return recommendedPlaceMarkup(parts()[2],state.published,lifeScope());if(p==='recommended-route')return recommendedRouteMarkup(parts()[2],state.published,lifeScope());if(p==='life-library')return contentHome(lifeScope(),{tab:contentTab,category:contentCategory,query:contentQuery,limit:contentLimit,eventsMarkup:eventsPreviewMarkup(workspace.life,currentCity())})||'<div class="page-pad"><h1 class="page-title">本房源暂无原稿资料库</h1><p class="notice">未将其他房源的专属资料混入本店。可从演示商家选择清欢资料预览，查看已有85条资料与5条主题路线。</p></div>';if(p==='life-place')return placeContent(parts()[2],lifeScope());if(p==='life-route')return routeContent(parts()[2],lifeScope());if(p==='life-lead')return leadContent(parts()[2],lifeScope());if(p==='handbook')return `<div class="page-pad">${handbookMarkup(activePropertyId,state.published,target.unitId||null)}</div>`;if(p==='arrival')return `<div class="page-pad">${arrivalMarkup(state.published,activePropertyId,target.unitId||null)}</div>`;if(p==='home')return home();if(p==='rooms')return rooms();if(p==='room')return roomDetail();if(p==='space')return spaceDetail();if(p==='vr')return vr();
  }
  if(r==='merchant'){if(p==='publication')return publicationMarkup(state);if(p==='preview')return draftPreview();if(p==='guide-editor')return `<div class="page-pad">${guideEditorMarkup(state,activePropertyId)}${btn('确认与发布','open-publication','outline wide')}</div>`;if(p==='recommendations')return `<div class="page-pad">${recommendationEditorMarkup(state.draft,activePropertyId,recommendationEdit)}${btn('确认与发布','open-publication','outline wide')}</div>`;if(p==='new-property')return propertyFormMarkup();if(p==='units')return unitManagerMarkup(state);if(p==='room-edit')return roomFormMarkup(state,parts()[2]);if(p==='space-edit')return spaceFormMarkup(state,parts()[2]);if(p==='service')return `<div class="page-pad"><h1 class="page-title">接待处置资料</h1><p class="page-description">按问题查看确认清单、内部动作建议和责任岗位。</p>${serviceDeskMarkup(activePropertyId,state.published.knowledge)||'<p class="notice">当前房源暂无此组资料。</p>'}</div>`;if(p==='home')return merchantHome();if(p==='queue')return queue();if(p==='ticket')return ticketDetail();if(p==='editor')return editor();if(p==='vr')return vrEditor();if(p==='knowledge')return knowledge();if(p==='knowledge-edit')return knowledgeEditor();}
  if(r==='platform'){if(p==='activities')return activityAdmin(workspace.life);if(p==='event-edit')return activityForm(workspace.life.events[parts()[2]]||null);return platform();}
@@ -172,12 +187,12 @@ function rooms(){
 }
 function roomDetail(){
  const r=guestProperty().rooms.find(r=>r.id===parts()[2]);if(!r)return `<div class="page-pad">房间已不存在，请返回重新选择。</div>`;
- return `${photo(r.photo,'detail-photo',r.name+'氛围示意')}<div class="page-pad"><h1 class="detail-title">${esc(r.name)}</h1><p class="page-description">${esc(r.description)}</p><div class="tags">${r.facilities.map(f=>`<span class="tag">${esc(f)}</span>`).join('')}</div><dl class="detail-grid">${[['房间面积',r.area],['床型配置',r.beds],['建议人数',r.capacity],['所在楼层',r.floor],['卫浴',r.bath],['房型',r.type]].map(([a,b])=>`<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join('')}</dl><h2 style="font-size:15px">入住前，了解这些</h2><p class="notice">${esc(state.published.facts.checkin?.text||'入住规则尚未记录，请管家确认。')}</p><button class="text-btn" data-action="photo" data-scene="${r.photo}" data-label="${esc(r.name)}">${icon('image')} 查看示例图片</button><p class="demo-footnote">虚构示例资料 · 非真实房源实拍<br>公开资料 V${state.published.version}</p></div>`;
+ return `${photo(r.photo,'detail-photo',r.name+'氛围示意')}<div class="page-pad"><h1 class="detail-title">${esc(r.name)}</h1><p class="page-description">${esc(r.description)}</p><div class="tags">${r.facilities.map(f=>`<span class="tag">${esc(f)}</span>`).join('')}</div><dl class="detail-grid">${[['房间面积',r.area],['床型配置',r.beds],['建议人数',r.capacity],['所在楼层',r.floor],['卫浴',r.bath],['房型',r.type]].map(([a,b])=>`<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join('')}</dl><h2 style="font-size:15px">入住前，了解这些</h2><p class="notice">${esc(guestFact('checkin',target.unitId||r.id)?.text||'入住规则尚未记录，请管家确认。')}</p><button class="text-btn" data-action="photo" data-scene="${r.photo}" data-label="${esc(r.name)}">${icon('image')} 查看示例图片</button><p class="demo-footnote">虚构示例资料 · 非真实房源实拍<br>公开资料 V${state.published.version}</p></div>`;
 }
 function spaceInfo(){if(state.published.spaces){const x=state.published.spaces.find(x=>x.id===parts()[2]&&x.enabled!==false);return x?{...x,scene:x.key==='kitchen'?'kitchen':'courtyard',key:x.key||'environment',desc:x.description}:null;}return ({courtyard:{name:'独立庭院',scene:'courtyard',key:'environment',desc:'留一段时间，在院子里慢下来。'},kitchen:{name:'共享厨房',scene:'kitchen',key:'kitchen',desc:'旅途中，也可以做一顿喜欢的家常饭。'},living:{name:'共享客厅',scene:'living',key:'environment',desc:'一起聊天、阅读，享受自在的公共时光。'}})[parts()[2]];}
 function spaceDetail(){
  const s=spaceInfo();if(!s)return `<div class="page-pad">空间不存在，请返回重新选择。</div>`;
- return `${inlineVr(s.name+' · VR参考','space-vr')}<div class="page-pad"><h1 class="detail-title">${s.name}</h1><p class="page-description">${s.desc}</p><div class="section-title"><h2>开放与使用</h2></div><p class="intro-copy">${esc(state.published.facts[s.key]?.text||'暂无资料，请管家确认。')}</p><button class="text-btn" data-action="fact" data-key="${s.key}">${icon('book')} 查看本店资料依据</button><p class="notice">想了解使用时间、是否需要预约或具体设施，可以带着这个空间问问管家。</p><p class="demo-footnote">VR为整体看房参考，不绑定当前空间 · 使用条件以本店资料为准</p></div>`;
+ return `${inlineVr(s.name+' · VR参考','space-vr')}<div class="page-pad"><h1 class="detail-title">${esc(s.name)}</h1><p class="page-description">${esc(s.desc)}</p><div class="section-title"><h2>开放与使用</h2></div><p class="intro-copy">${esc(guestFact(s.key)?.text||'暂无资料，请管家确认。')}</p><button class="text-btn" data-action="fact" data-key="${s.key}">${icon('book')} 查看本店资料依据</button><p class="notice">想了解使用时间、是否需要预约或具体设施，可以带着这个空间问问管家。</p><p class="demo-footnote">VR为整体看房参考，不绑定当前空间 · 使用条件以本店资料为准</p></div>`;
 }
 function detailActions(){return `<div class="sticky-actions">${btn(icon('chat')+' 问问管家','ask-detail','wide')}</div>`;}
 function messageChatScope(message,thread){
@@ -232,6 +247,13 @@ function merchantShareSection(){
 }
 function lifeMessages(){return workspace.lifeChats[lifeChatKey(sessionId,currentCity().id,activePropertyId)]||[];}
 function handleExtraAction(a,b){
+ if(a==='storage-open'){storageDialog();return true;}
+ if(a==='storage-export'){downloadRaw(storageState.blocked?storageState.raw:localStorage.getItem(STORAGE),'民宿工具-原始数据-'+Date.now()+'.json');return true;}
+ if(a==='storage-backup-export'){const backup=readWorkspaceBackup(localStorage,b.dataset.key);if(backup.ok)downloadRaw(backup.raw,'民宿工具-原文备份-'+Date.now()+'.json');else toast(backup.error);return true;}
+ if(a==='storage-backup-restore'){const backup=readWorkspaceBackup(localStorage,b.dataset.key);if(backup.ok)previewRestore(backup.raw);else toast(backup.error);return true;}
+ if(a==='storage-reload'){location.reload();return true;}
+ if(a==='storage-fresh'){showDialog('改用独立示例',`<p class="dialog-copy">将先自动备份当前和旧版原文，再建立新的v0.5示例。当前v0.5工作区会替换；旧版原文保留，原来的备份可下载或重新导入。未保存的输入将被替换。</p><div class="dialog-actions">${btn('取消','close-dialog','outline')}${btn('确认保留备份并新建','dialog-confirm','')}</div>`,()=>applyRecovery(null));return true;}
+
  if(b.closest('.draft-preview')){toast('这里只预览草稿，请返回维护页操作。');return true;}
  if(a==='preview-section'){previewSection=b.dataset.section;render();return true;}
  if(a==='open-publication'){
@@ -359,7 +381,9 @@ function handleExtraSubmit(event){
  }
  return false;
 }
-document.addEventListener('change',event=>{
+document.addEventListener('change',async event=>{
+ if(event.target.getAttribute('id')==='storage-import'){const file=event.target.files?.[0];if(!file)return;try{if(file.size>20*1024*1024)throw Error('备份超过20MB，请核对文件');previewRestore(await file.text());}catch(e){$('#storage-status').textContent='未导入：'+e.message;}return;}
+
  if(event.target.closest('#guide-editor-form,#recommendation-form'))maintenanceDirty=true;
  if(event.target.getAttribute('id')==='merchant-select'){const p=Object.entries(workspace.properties).find(([,p])=>p.merchantId===event.target.value);if(p)switchProperty(p[0],role());}
  if(event.target.getAttribute('id')==='property-select')switchProperty(event.target.value,role());
@@ -419,7 +443,7 @@ document.addEventListener('click',e=>{
  if(a==='mobile-controls'){mobileOpen=!mobileOpen;render();return;}
  if(a==='about'){
   const controls=mobilePresentation()&&!customerPreview?`<p class="demo-menu-label">切换演示视角</p><nav class="demo-role-menu" aria-label="切换演示视角">${[['guest','客人端','看房与咨询'],['merchant','商家端','接待与分享'],['platform','平台端','资料与活动']].map(([key,label,hint])=>`<button data-action="role" data-role="${key}" class="${role()===key?'active':''}" aria-pressed="${role()===key}"><strong>${label}</strong><small>${hint}</small></button>`).join('')}</nav>${demoSelectors()}<button class="text-btn" data-action="legacy-life-archive">查看本浏览器旧版向导记录</button>`:'';
-  showDialog(controls?'演示入口':'关于这个演示',`${controls}<p class="dialog-copy">房源与本地生活为示例内容，VR为第三方参考案例。AI按已公开资料做本地问答演示，尚未连接真实模型。\n\n资料和咨询保存在当前浏览器，各设备独立；尚未接入真实登录与通知。</p>`);return;
+  showDialog(controls?'演示入口':'关于这个演示',`${controls}${customerPreview?'':'<button class="text-btn" data-action="storage-open">备份与恢复</button>'}<p class="dialog-copy">房源与本地生活为示例内容，VR为第三方参考案例。AI按已公开资料做本地问答演示，尚未连接真实模型。\n\n资料和咨询保存在当前浏览器，各设备独立；尚未接入真实登录与通知。</p>`);return;
  }
  if(a==='try-kitchen'){goChat('厨房能做饭吗');return;}
  if(a==='try-room'){goChat('这间房床有多大',{roomId:guestProperty().rooms[0]?.id});return;}
@@ -434,7 +458,7 @@ document.addEventListener('click',e=>{
  if(a==='room-filter'){roomFilter=b.dataset.filter;render();return;}
  if(a==='queue-filter'){queueFilter=b.dataset.filter;render();return;}
  if(a==='fact'){
-  const key=b.dataset.key,t=TOPICS[key],text=state.published.facts[key]?.text;
+  const key=b.dataset.key,t=TOPICS[key],text=guestFact(key)?.text;
   showDialog(t.label,`<p class="dialog-copy">${esc(text||'本店尚未记录这一规则，请管家确认。')}</p><p class="version-line" style="margin-top:17px">来源：${esc(state.published.name)}公开资料 V${state.published.version}</p>${btn('带着这个问题问管家','dialog-confirm','secondary wide')}`,()=>goChat(({kitchen:'厨房能做饭吗',parking:'怎么停车',checkin:'几点可以入住',environment:'公共区域几点开放'})[key]||'想了解'+t.label));return;
  }
  if(a==='photo'){
@@ -508,7 +532,7 @@ document.addEventListener('keydown',e=>{if(e.target.getAttribute('id')==='chat-i
 $('#detail-dialog').addEventListener('click',e=>{if(e.target===$('#detail-dialog'))closeDialog();});
 $('#detail-dialog').addEventListener('cancel',()=>{dialogAction=null;});
 window.addEventListener('hashchange',()=>{if($('#detail-dialog').open)closeDialog();render();});
-window.addEventListener('storage',e=>{if(e.key===STORAGE&&e.newValue){try{const next=JSON.parse(e.newValue);if(next.schema===2&&next.revision!==workspace.revision){workspace=next;setActive();render();toast('已同步另一窗口的房源与活动更新。');}}catch{toast('另一窗口资料格式异常，保留当前页面。');}}});
+window.addEventListener('storage',e=>{if(e.key===STORAGE){const check=inspectWorkspace(e.newValue);if(!check.ok){storageState={...storageState,blocked:true,raw:e.newValue,sourceKey:STORAGE,error:'另一窗口资料异常，已暂停保存；可备份原文后恢复。'};storageError=storageState.error;render();return;}if(check.workspace.revision!==workspace.revision){workspace=check.workspace;storageState={workspace,blocked:false,raw:e.newValue,sourceKey:STORAGE};storageError='';setActive();render();toast('已同步另一窗口的房源与活动更新。');}}});
 if(!location.hash)history.replaceState(null,'',location.pathname+location.search+'#/guest/home');
 render();
 

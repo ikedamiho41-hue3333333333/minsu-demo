@@ -25,7 +25,7 @@ function recordFingerprint(record){const copy=clone(record);delete copy.confirma
 const propertyIdOf=draft=>draft?.experience?.propertyId;
 function recordsOf(draft){
  const result=[];if(!draft||typeof draft!=='object')return result;
- for(const [key,record]of Object.entries(draft.facts??{}))if(record&&typeof record==='object')result.push({key:`facts.${key}`,id:record.id??`fact:${key}`,label:key,group:'fact',record});
+ for(const [key,record]of Object.entries(draft.facts??{}))if(record&&typeof record==='object')result.push({key:`facts.${key}`,id:record.id??`fact:${key}`,label:({kitchen:'厨房规则',parking:'停车说明',checkin:'入住与退房',location:'位置与交通',environment:'公共空间',wifi:'网络与设备',pets:'宠物规则',breakfast:'早餐说明',price:'费用与订单'}[key]||key),group:'fact',record});
  for(const record of draft.knowledge??[])if(record&&typeof record==='object')result.push({key:`knowledge.${record.id}`,id:record.id,label:record.question,group:'knowledge',record});
  const experience=draft.experience??{},guide=experience.guide??{},recommendations=experience.recommendations??{};
  for(const [key,record]of Object.entries(guide.points??{}))if(record)result.push({key:`guide.points.${key}`,id:record.id,label:{property:'民宿位置',parking:'停车点',entrance:'实际入口'}[key]??key,group:'point',record});
