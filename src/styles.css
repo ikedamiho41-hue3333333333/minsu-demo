@@ -197,3 +197,5 @@ body.mobile-presentation{background:#e9eee7;font-size:15px;overflow:hidden;-webk
 .service-notice{margin:16px 0;line-height:1.85}
 .service-ask{margin-top:12px}
 @media(max-width:360px){.content-tabs button{font-size:13px}.content-search-bottom{gap:8px}.content-detail .detail-grid{grid-template-columns:1fr}.service-card summary,.service-guide summary{font-size:14px}}
+
+.home-quick-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.home-quick-actions .btn{flex:1;min-width:85px;min-height:44px;font-size:13px}.page-pad select{max-width:100%}.field input,.field textarea,.field select{min-width:0}

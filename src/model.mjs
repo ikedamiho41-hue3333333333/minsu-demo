@@ -39,7 +39,7 @@ export function createSeed(){
 }
 
 export function answer(state,question,context=null){
- const p=state.published,q=norm(question),sources=[],parts=[],missing=[];
+ const p={...state.published,rooms:state.published.rooms.filter(r=>r.enabled!==false)},q=norm(question),sources=[],parts=[],missing=[];
  let needsClarification=false;
  if(!state.visible)return {status:'unavailable',body:'本民宿资料暂时停止展示，请联系管家。',sources:[]};
  if(context?.roomId&&!p.rooms.some(r=>r.id===context.roomId))return {status:'needs_clarification',body:'这个房间不在本民宿当前公开资料中，请重新选择房间。',sources:[]};
