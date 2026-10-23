@@ -205,6 +205,8 @@ body.mobile-presentation{background:#e9eee7;font-size:15px;overflow:hidden;-webk
 @media(max-width:360px){.content-tabs button{font-size:13px}.content-search-bottom{gap:8px}.content-detail .detail-grid{grid-template-columns:1fr}.service-card summary,.service-guide summary{font-size:14px}}
 
 .home-quick-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.home-quick-actions .btn{flex:1;min-width:85px;min-height:44px;font-size:13px}.page-pad select{max-width:100%}.field input,.field textarea,.field select{min-width:0}
+
+.guide-points,.guide-media-list{display:grid;gap:18px}.guide-point,.guide-step,.guide-media,.recommendation-card{padding-block:16px;border-bottom:1px solid var(--line)}.guide-point h2,.guide-media h2{font-size:18px;margin-bottom:8px}.guide-actions{display:flex;gap:8px;flex-wrap:wrap}.guide-actions>*{min-height:44px}.guide-media video,.guide-media img{display:block;max-width:100%;height:auto;margin:12px 0}.guide-media video{width:100%;min-height:140px;background:#edf0e8}.recommendation-filter{display:grid;grid-template-columns:1fr 1fr;gap:12px}.recommendation-filter .btn{grid-column:1/-1}.recommendation-detail p,.guide-point p{overflow-wrap:anywhere}.recommended-links{display:flex;gap:8px;flex-wrap:wrap}
 </style>
 
 </head>
@@ -286,65 +288,552 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			}
 		};
 	}
+	function experienceOf(snapshot, propertyId) {
+		return snapshot.experience?.propertyId === propertyId ? snapshot.experience : emptyExperience(propertyId);
+	}
 	function upgradeExperience(workspace) {
 		const next = structuredClone(workspace);
 		for (const [pid, p] of Object.entries(next.properties)) for (const key of ["draft", "published"]) if (!p.state[key].experience) p.state[key].experience = emptyExperience(pid);
 		return next;
 	}
+	function publicRecord(record, propertyId, unitId = null, now = Date.now()) {
+		if (!record || record.propertyId !== propertyId || record.unitId && record.unitId !== unitId || record.enabled === false || record.cancelled || record.visibility !== "public") return false;
+		if (record.confirmation?.status !== "confirmed" || !record.confirmation.by || !Number.isFinite(Date.parse(record.confirmation.at))) return false;
+		if (record.validFrom && (!Number.isFinite(Date.parse(record.validFrom)) || Date.parse(record.validFrom) > now)) return false;
+		if (record.validUntil && (!Number.isFinite(Date.parse(record.validUntil)) || Date.parse(record.validUntil) < now)) return false;
+		return true;
+	}
+	function safeExternalUrl(value) {
+		try {
+			const u = new URL(value);
+			return ["https:", "http:"].includes(u.protocol) ? u.href : "";
+		} catch {
+			return "";
+		}
+	}
+	function confirmedPoint(point, propertyId, unitId = null) {
+		return publicRecord(point, propertyId, unitId) && typeof point.lat === "number" && typeof point.lng === "number" && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180 && !!point.address?.trim();
+	}
 	//#endregion
-	//#region src/property-ui.mjs
-	const esc$3 = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
+	//#region src/qinghuan-service.json
+	var notice = "内部资料预览，全部建议待店方确认。原表中的时效、赔付额度、巡检、自动推送与派单均为策划候选，不代表已开通、已授权或已执行。责任岗位与整改优先级来自原表，未形成真实派工或整改任务。";
+	//#endregion
+	//#region src/service-ui.mjs
+	const serviceKnowledge = [
+		{
+			"id": "Q01",
+			"phase": "入住前",
+			"question": "从机场/高铁站怎么到院子？能安排接站吗？",
+			"internalActionSummary": "原表策划建议：到店前自动推送「一码通」电子指南：导航一键启动、3条到店路线图文、接站报价表、24h紧急电话；拼车排期表共享文档降本",
+			"roleCandidate": "管家",
+			"priority": "P0",
+			"confirmationChecklist": "机场/车站与本店的准确定位、推荐交通、参考车程及有效日期；是否提供接站、费用口径、预约与承接人、服务时段。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A4:O4"
+			}
+		},
+		{
+			"id": "Q02",
+			"phase": "入住前",
+			"question": "小区楼栋多、路复杂，到了怎么找到房间？",
+			"internalActionSummary": "原表策划建议：「找房三件套」：从214国道入口拍到房门的实景路书视频 + 入住日玄关/楼栋提前亮灯 + 密码与地图双通道；管家不再电话远程指路",
+			"roleCandidate": "管家",
+			"priority": "P0",
+			"confirmationChecklist": "本店/出租单元对应的小区入口、楼栋/门牌、白天和夜间路书、可用导航点、门禁获取方式及迷路联系入口。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A5:O5"
+			}
+		},
+		{
+			"id": "Q03",
+			"phase": "入住前",
+			"question": "自驾好停车吗？收费吗？有充电桩吗？",
+			"internalActionSummary": "原表策划建议：平台标签前置「免费停车/代客泊车」+ 停车实拍图入电子指南；充电需求提前登记排期，避免到店后协调",
+			"roleCandidate": "管家",
+			"priority": "P1",
+			"confirmationChecklist": "本店可使用的停车场、收费/免费适用范围、入场规则、是否代客泊车；充电设施是否真实存在、位置及预约方式。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A6:O6"
+			}
+		},
+		{
+			"id": "Q04",
+			"phase": "入住前",
+			"question": "能提前入住或延迟退房吗？",
+			"internalActionSummary": "原表策划建议：房态共享日历自助查「可早入/可晚退」时段；行李寄存牌流程化，管家只处理例外",
+			"roleCandidate": "管家/保洁",
+			"priority": "P1",
+			"confirmationChecklist": "本店标准入住/退房时刻、早到/晚退条件与费用、行李寄存规则、房态及保洁的实际确认渠道。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A7:O7"
+			}
+		},
+		{
+			"id": "Q05",
+			"phase": "入住前",
+			"question": "除房费外还有押金、清洁费吗？退改规则是什么？",
+			"internalActionSummary": "原表策划建议：「费用一页纸」随确认短信自动下发；下单前弹窗列明全部收费项，把争议消灭在成交前",
+			"roleCandidate": "运营/管家",
+			"priority": "P0",
+			"confirmationChecklist": "房费之外实际存在的押金、清洁费、超时费、收费条件；订单渠道对应的退改条款、退款路径与时效。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A8:O8"
+			}
+		},
+		{
+			"id": "Q06",
+			"phase": "入住前",
+			"question": "能带宠物吗？有什么要求？",
+			"internalActionSummary": "原表策划建议：预订页宠物标签化；宠物入住包（尿垫/湿巾/食盆）标准化配置，押金规则写进确认函",
+			"roleCandidate": "管家/保洁",
+			"priority": "P2",
+			"confirmationChecklist": "清欢是否接待宠物、允许的品种/体型/数量、适用房源、押金/清洁费、行为要求及需提前确认的条件。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A9:O9"
+			}
+		},
+		{
+			"id": "Q07",
+			"phase": "入住前",
+			"question": "含早餐吗？可以自己做饭吗？",
+			"internalActionSummary": "原表策划建议：早餐「一码通」订餐；厨房时段预约制+清洁checklist，杜绝共享设施冲突",
+			"roleCandidate": "管家/餐饮",
+			"priority": "P1",
+			"confirmationChecklist": "是否含早及适用订单、早餐供应者/地点/时段/价格；本店厨房是否可用、设施用品、预约与清洁责任。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A10:O10"
+			}
+		},
+		{
+			"id": "Q08",
+			"phase": "入住前",
+			"question": "房间图片和实际一致吗？会不会照骗？",
+			"internalActionSummary": "原表策划建议：实拍视频替代精修图上架；主动披露短板文案；承诺入住30分钟无理由换房",
+			"roleCandidate": "运营",
+			"priority": "P0",
+			"confirmationChecklist": "每个房型/出租单元的实际图文/VR对应关系、拍摄日期、景观与楼层、已知短板；是否有换房政策及执行条件。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A11:O11"
+			}
+		},
+		{
+			"id": "Q09",
+			"phase": "入住前",
+			"question": "有空调/取暖吗？雨季潮不潮、冬天冷不冷？",
+			"internalActionSummary": "原表策划建议：电子指南按季节自动推送「当季舒适提示」；潮湿楼层标配除湿设备，预期前置管理",
+			"roleCandidate": "管家",
+			"priority": "P1",
+			"confirmationChecklist": "各出租单元实际空调、取暖/除湿设备及使用方法；楼层季节性情况、可借物品与服务时段。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A12:O12"
+			}
+		},
+		{
+			"id": "Q10",
+			"phase": "入住前",
+			"question": "能开发票吗？怎么开？",
+			"internalActionSummary": "原表策划建议：退房时扫码自助填开票信息，系统自动开具并推送，零人工介入",
+			"roleCandidate": "运营/财务",
+			"priority": "P2",
+			"confirmationChecklist": "本店是否可开及由谁开、可开项目/金额、申请信息、申请入口、渠道限制与承诺时效。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A13:O13"
+			}
+		},
+		{
+			"id": "Q11",
+			"phase": "入住中",
+			"question": "突然停水停电怎么办？找谁？多久能修？",
+			"internalActionSummary": "原表策划建议：应急SOP卡片（停水/停电/漏水三张）；入住日水电预检拍照；常备桶装水应急包，把突发变有准备",
+			"roleCandidate": "管家/维修",
+			"priority": "P0",
+			"confirmationChecklist": "停水/停电/漏水的实际应急流程、当班/维修/物业渠道、可提供的替代安排、通知方式与补偿授权。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A14:O14"
+			}
+		},
+		{
+			"id": "Q12",
+			"phase": "入住中",
+			"question": "热水出水慢、忽冷忽热怎么解决？",
+			"internalActionSummary": "原表策划建议：硬件改造：增压花洒/热水循环/水温标定；房间贴「热水使用提示卡」；报修工单直达维修，管家只跟进结果",
+			"roleCandidate": "管家/维修",
+			"priority": "P0",
+			"confirmationChecklist": "本房热水设备类型、开关及等待/温度提示、可用说明图、故障判断、报修渠道和实际响应规则。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A15:O15"
+			}
+		},
+		{
+			"id": "Q13",
+			"phase": "入住中",
+			"question": "WiFi连不上/网速慢怎么办？",
+			"internalActionSummary": "原表策划建议：全屋Mesh组网改造；密码做成桌卡+一码通双通道；指南内标注实测网速管理预期",
+			"roleCandidate": "管家/维修",
+			"priority": "P1",
+			"confirmationChecklist": "各单元网络覆盖、设备可执行的排查步骤、故障联系人；WiFi凭据的授权获取入口及可见范围。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A16:O16"
+			}
+		},
+		{
+			"id": "Q14",
+			"phase": "入住中",
+			"question": "房间有蜘蛛、蚊虫怎么办？",
+			"internalActionSummary": "原表策划建议：入住前「虫害预防三件套」（蚊香液/电蚊拍/纱窗检查）；庭院定期驱蚊喷洒排期表；床品深度清洁SOP",
+			"roleCandidate": "管家/保洁",
+			"priority": "P1",
+			"confirmationChecklist": "本店防虫物资及位置、可提供的清洁/除虫处理、联系时段、换房或补偿的批准条件。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A17:O17"
+			}
+		},
+		{
+			"id": "Q15",
+			"phase": "入住中",
+			"question": "卫生没打扫、垃圾没人倒怎么办？",
+			"internalActionSummary": "原表策划建议：连住客人「打扫日历」扫码自助预约；保洁拍照打卡制；垃圾不超2/3巡检制（每日3次）",
+			"roleCandidate": "保洁/管家",
+			"priority": "P0",
+			"confirmationChecklist": "一客一扫或连住打扫政策、免费/收费范围、预约提前量、保洁时段、垃圾清运与补扫渠道。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A18:O18"
+			}
+		},
+		{
+			"id": "Q16",
+			"phase": "入住中",
+			"question": "晚上小区路灯暗、独自回家安全吗？",
+			"internalActionSummary": "原表策划建议：向物业提交照明盲区清单推动整改；管家夜间动线亮灯试点；指南内置安全提示+保安室电话",
+			"roleCandidate": "管家/物业联动",
+			"priority": "P1",
+			"confirmationChecklist": "真实可走夜间路线、照明情况、安全联系/物业渠道、值班时段，是否能陪同或借手电。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A19:O19"
+			}
+		},
+		{
+			"id": "Q17",
+			"phase": "入住中",
+			"question": "共享厨房/洗衣机被其他客人占用怎么办？",
+			"internalActionSummary": "原表策划建议：共享设施扫码预约排期表（时段可视化）；短租客优先原则；逐步一房一机配置",
+			"roleCandidate": "管家",
+			"priority": "P1",
+			"confirmationChecklist": "哪些设施实际共享、适用住客、可用时段、预约/排队方法、冲突处理与替代方案。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A20:O20"
+			}
+		},
+		{
+			"id": "Q18",
+			"phase": "入住中",
+			"question": "隔音怎么样？小区晚上吵吗？",
+			"internalActionSummary": "原表策划建议：耳塞入「安心包」；房源文案如实标注；小区活动提前一天群预告",
+			"roleCandidate": "管家",
+			"priority": "P2",
+			"confirmationChecklist": "各房型隔音/临街/活动影响的如实说明、安静时段、耳塞是否可提供、噪音投诉渠道。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A21:O21"
+			}
+		},
+		{
+			"id": "Q19",
+			"phase": "入住中",
+			"question": "周边怎么玩？有本地攻略和推荐吗？",
+			"internalActionSummary": "原表策划建议：「南区电子攻略」一码通：3条一日游路线+餐厅红灰榜+交通卡；AI客服基于知识库秒答延伸问题",
+			"roleCandidate": "管家",
+			"priority": "P1",
+			"confirmationChecklist": "先整合攻略66条及主题新增点位的有效资料；本店可否代订、收费与联系方法；客人当次偏好、人数及可用时间。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A22:O22"
+			}
+		},
+		{
+			"id": "Q20",
+			"phase": "入住中",
+			"question": "衣服怎么洗？有烘干吗？",
+			"internalActionSummary": "原表策划建议：扫码解锁洗衣房+烘干排期；连住客人洗衣指南一页纸",
+			"roleCandidate": "保洁/管家",
+			"priority": "P2",
+			"confirmationChecklist": "本房/公共洗衣设施的位置、可用机型、洗涤用品、使用/收费规则；烘干是否存在、时段与雨天处理办法。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A23:O23"
+			}
+		},
+		{
+			"id": "Q21",
+			"phase": "退房后",
+			"question": "押金什么时候退？怎么退？",
+			"internalActionSummary": "原表策划建议：承诺写入确认函；系统自动退款触发；损坏争议以入住时房间视频留证裁定",
+			"roleCandidate": "运营/财务",
+			"priority": "P0",
+			"confirmationChecklist": "是否收押金、金额/支付渠道、查房流程、原路退回条件、到账时效、查询与争议入口。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A24:O24"
+			}
+		},
+		{
+			"id": "Q22",
+			"phase": "退房后",
+			"question": "退房超时了怎么收费？能延到下午吗？",
+			"internalActionSummary": "原表策划建议：退房前1天自动推送「弹性退房」自助申请（对接次日房态）；行李寄存兜底",
+			"roleCandidate": "管家",
+			"priority": "P1",
+			"confirmationChecklist": "各渠道/房型超时收费、阶梯边界、宽限条件、晚退申请截止时间、实际房态确认和寄存替代。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A25:O25"
+			}
+		},
+		{
+			"id": "Q23",
+			"phase": "退房后",
+			"question": "东西落在房间怎么办？能寄回吗？",
+			"internalActionSummary": "原表策划建议：遗留物检查清单卡+拍照模板；快递合作月结价；客人扫码登记申领，全程零电话",
+			"roleCandidate": "保洁/管家",
+			"priority": "P1",
+			"confirmationChecklist": "遗留物联系/登记入口、查找范围与时段、认领核验方式、保管期限、邮寄费用与快递处理规则。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A26:O26"
+			}
+		},
+		{
+			"id": "Q24",
+			"phase": "退房后",
+			"question": "厨房没清理/房间弄脏会被扣费吗？标准是什么？",
+			"internalActionSummary": "原表策划建议：「深度清洁费价目表」入确认函；入住时房间状态照片作基线；争议以照片比对裁定",
+			"roleCandidate": "管家/保洁",
+			"priority": "P1",
+			"confirmationChecklist": "本店深度清洁费的适用情形/价目、正常使用界限、事前告知与争议处理方式、证据保管规则。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A27:O27"
+			}
+		},
+		{
+			"id": "Q25",
+			"phase": "退房后",
+			"question": "发票多久开出来？开错了怎么办？",
+			"internalActionSummary": "原表策划建议：自助开票小程序+重开工单24小时响应闭环",
+			"roleCandidate": "运营/财务",
+			"priority": "P2",
+			"confirmationChecklist": "实际开票时效、进度查询、错误更正/重开流程、是否收费、办理主体与承接渠道。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A28:O28"
+			}
+		},
+		{
+			"id": "Q26",
+			"phase": "退房后",
+			"question": "退房后能帮忙叫车/送站吗？",
+			"internalActionSummary": "原表策划建议：退房前1天问约车；拼车排期表摊薄成本；与固定司机长期合作价",
+			"roleCandidate": "管家",
+			"priority": "P2",
+			"confirmationChecklist": "是否提供送站、实际合作司机/联系归口、费用与预约规则、拼车条件、服务时段及人数/行李限制。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A29:O29"
+			}
+		},
+		{
+			"id": "Q27",
+			"phase": "退房后",
+			"question": "对服务不满意找谁？有补偿吗？",
+			"internalActionSummary": "原表策划建议：差评24小时黄金响应SOP；补偿额度授权管家现场决断（如50元内）；月度客诉复盘会",
+			"roleCandidate": "管家/主理人",
+			"priority": "P0",
+			"confirmationChecklist": "投诉受理渠道、当班/升级责任、可确认的响应时效、补偿权限与记录方式。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A30:O30"
+			}
+		},
+		{
+			"id": "Q28",
+			"phase": "退房后",
+			"question": "下次来有老客优惠吗？怎么订？",
+			"internalActionSummary": "原表策划建议：离店24小时自动感谢消息+再访优惠券；会员群运营；手机号为键的客户档案（一码通）",
+			"roleCandidate": "运营/管家",
+			"priority": "P1",
+			"confirmationChecklist": "是否确有老客权益、折扣/升房/礼品具体规则、有效期、适用房源/渠道、核验和预订入口。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A31:O31"
+			}
+		},
+		{
+			"id": "Q29",
+			"phase": "退房后",
+			"question": "设施损坏被要求赔偿怎么界定？",
+			"internalActionSummary": "原表策划建议：入住时引导「3分钟房间视频」自助留证；物品损坏价目表公示；双向保护减少扯皮",
+			"roleCandidate": "管家",
+			"priority": "P1",
+			"confirmationChecklist": "本店损坏判定与正常损耗界限、已公示价目、入住状态留证方式、复核/争议渠道及授权人。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A32:O32"
+			}
+		},
+		{
+			"id": "Q30",
+			"phase": "退房后",
+			"question": "退房后有问题还能找到管家吗？",
+			"internalActionSummary": "原表策划建议：离店后自动推送「售后卡」（电话+微信+常见问题链接）；夜间咨询AI客服托管",
+			"roleCandidate": "管家/运营",
+			"priority": "P1",
+			"confirmationChecklist": "实际售后电话/微信或页面入口、服务时段、夜间和紧急情况的真实承接渠道、问题分级与交接方式。",
+			"status": "pending_confirmation",
+			"sourceRef": {
+				"file": "大理小院子南区民宿管家服务30问.xlsx",
+				"location": "30问总表!A33:O33"
+			}
+		}
+	];
+	const esc$5 = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
 		"&": "&amp;",
 		"<": "&lt;",
 		">": "&gt;",
 		"\"": "&quot;",
 		"'": "&#39;"
-	})[c]);
-	const button = (label, route) => `<button class="btn secondary" data-action="nav" data-route="${route}">${label}</button>`;
-	const field = (label, name, value = "", required = true) => `<label class="field">${label}<input name="${name}" value="${esc$3(value)}" maxlength="100" ${required ? "required" : ""}></label>`;
-	function propertyFormMarkup() {
-		return `<div class="page-pad"><h1 class="page-title">新增房源</h1><p class="notice">本阶段使用测试资料。真实房源、规则和媒体须由授权人确认，新增不会自动对客发布。</p><form id="new-property-form">${field("房源名称", "name")}${field("位置与地区", "location")}<label class="field">出租方式<select name="rentalMode"><option value="pending">待确认</option><option value="room">按间出租</option><option value="whole">整院包栋</option></select></label><label class="field">城市<select name="city"><option value="pending">地区待确认</option><option value="dali">大理</option><option value="moganshan">莫干山</option></select></label><button class="btn wide" type="submit">创建房源草稿</button></form></div>`;
+	})[char]);
+	const phases = [
+		"入住前",
+		"入住中",
+		"退房后"
+	];
+	const isGuideId = (id) => /^Q(?:0[1-9]|[12]\d|30)$/.test(id ?? "");
+	const publicGuides = (knowledge) => (Array.isArray(knowledge) ? knowledge : []).filter((item) => item?.kind === "confirmation_guide" && isGuideId(item.id));
+	const findPublicGuide = (knowledge, id) => publicGuides(knowledge).find((item) => item.id === id);
+	const publicMissing = {
+		Q01: "准确导航点、交通参考、接站是否提供及费用、预约方式和服务时段。",
+		Q02: "对应出租单元的入口、楼栋门牌、日夜路书与核验入住身份后的门禁获取方式。",
+		Q03: "可用停车位置、收费和入场规则；充电设施是否存在、当日可用情况及预约方式。",
+		Q04: "标准入住退房时间、早入晚退条件和费用、行李寄存规则及当日房态。",
+		Q05: "订单所列费用、押金和清洁费是否另收、退改条款与订单查询入口。",
+		Q06: "是否接待宠物、适用单元、种类体型数量限制、费用与行为要求。",
+		Q07: "是否含早、适用订单、供应地点时段和价格；厨房是否可用及使用清洁要求。",
+		Q08: "本单元实拍或VR对应关系、拍摄日期、景观楼层及已知限制。",
+		Q09: "本单元空调、取暖和除湿设备、实际使用说明及可借物品。",
+		Q10: "能否开票、办理主体、项目金额、申请资料和入口。",
+		Q11: "故障情况的联系入口、可提供的替代安排及后续通知方式。",
+		Q12: "本房热水设备说明、安全使用提示与报修联系入口。",
+		Q13: "本单元网络覆盖、授权WiFi凭据获取入口与可执行的排查说明。",
+		Q14: "可用防虫用品、清洁或除虫处理的联系入口和适用条件。",
+		Q15: "连住打扫政策、预约方式、可用时段和收费范围。",
+		Q16: "可走夜间路线、照明情况、物业或安全联系入口及可借物品。",
+		Q17: "实际共享设施、适用住客、可用时段、预约排队方法与替代方案。",
+		Q18: "本单元隔音和临街情况、安静时段、可借用品及噪音联系入口。",
+		Q19: "攻略地点的有效信息、可用时间与出行偏好；能否代订、费用和联系方法。",
+		Q20: "实际洗衣和烘干设施、位置、时段、用品与收费规则。",
+		Q21: "是否收取押金、原支付渠道、退回条件、到账时间和查询入口。",
+		Q22: "超时费用、宽限条件、晚退申请方式和当日房态；行李寄存替代方案。",
+		Q23: "遗留物联系和登记入口、认领核验、保管期限及邮寄费用规则。",
+		Q24: "已告知的清洁费适用条件、正常使用界限、价目与争议查询入口。",
+		Q25: "实际开票时效、进度查询、更正重开方式与办理入口。",
+		Q26: "是否提供送站、实际费用、预约方式、服务时段及人数行李限制。",
+		Q27: "投诉受理入口、服务时段与个案后续答复方式。",
+		Q28: "是否确有老客权益、具体规则、有效期、适用房源和预订入口。",
+		Q29: "正常损耗与损坏的区分、事前公示规则、复核和争议查询入口。",
+		Q30: "可核实的售后联系入口、服务时段及夜间紧急联系获取方式。"
+	};
+	function sourceMarkup$1(sourceRef) {
+		return `<p class="small muted service-source">来源：${esc$5(sourceRef?.file)} · ${esc$5(sourceRef?.location)}</p>`;
 	}
-	function unitManagerMarkup(state) {
-		const d = state.draft;
-		return `<div class="page-pad"><h1 class="page-title">房间与公共空间</h1><p class="notice">${esc$3(d.name)} · 以下为草稿，保存不会改变客人端。停用与出租方式变更需确认发布后生效。</p><form id="rental-mode-form"><label class="field">出租方式<select name="rentalMode">${[
-			["pending", "待确认"],
-			["room", "按间出租"],
-			["whole", "整院包栋"]
-		].map(([k, v]) => `<option value="${k}" ${d.rentalMode === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>${field("整院建议入住人数", "wholeCapacity", d.wholeCapacity || "", false)}<button class="btn secondary wide">保存出租方式草稿</button></form><div class="section-title"><h2>卧室 · ${d.rooms.length}</h2></div>${button("新增房间", "merchant/room-edit/new")}${d.rooms.map((r) => `<article class="knowledge-item"><h3>${esc$3(r.name)} · ${r.enabled === false ? "已停用（草稿）" : "启用"}</h3><p>${esc$3(r.beds)} · ${esc$3(r.capacity)}</p>${button("编辑房间", "merchant/room-edit/" + r.id)}</article>`).join("")}${!d.rooms.length ? "<p class=\"notice\">尚未填写房间，不会自动复制示例卧室。</p>" : ""}<div class="section-title"><h2>公共空间</h2></div>${button("新增公共空间", "merchant/space-edit/new")}${(d.spaces || []).map((r) => `<article class="knowledge-item"><h3>${esc$3(r.name)} · ${r.enabled === false ? "已停用（草稿）" : "启用"}</h3>${button("编辑空间", "merchant/space-edit/" + r.id)}</article>`).join("")}<div class="section-title"><h2>检查并发布</h2></div>${button("返回民宿资料", "merchant/editor")}</div>`;
+	function publicSourceMarkup(guide) {
+		return `<p class="small muted service-source">来源：${esc$5(guide.sourceLabel || `清欢30问 · ${guide.id}`)} · ${esc$5(guide.sourceRange || "来源位置待补充")}</p>`;
 	}
-	function roomFormMarkup(state, id) {
-		const r = id === "new" ? {
-			name: "",
-			type: "",
-			floor: "",
-			area: "",
-			beds: "",
-			capacity: "",
-			bath: "",
-			description: "",
-			facilities: []
-		} : state.draft.rooms.find((r) => r.id === id);
-		if (!r) return "<div class=\"page-pad\"><p>房间不存在，请返回重新选择。</p></div>";
-		return `<div class="page-pad"><h1 class="page-title">${id === "new" ? "新增房间" : "编辑房间"}</h1><form id="unit-room-form" data-id="${esc$3(id)}">${[
-			["name", "房间名称"],
-			["type", "房型"],
-			["floor", "所在楼层"],
-			["area", "面积"],
-			["beds", "床型"],
-			["capacity", "建议入住人数"],
-			["bath", "卫浴"]
-		].map(([k, l]) => field(l, k, r[k] || "")).join("")}${field("设施（逗号分隔）", "facilities", (r.facilities || []).join("，"), false)}<label class="field">房间介绍<textarea name="description" maxlength="500">${esc$3(r.description)}</textarea></label><label class="field">状态<select name="enabled"><option value="true" ${r.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${r.enabled === false ? "selected" : ""}>停用</option></select></label><button class="btn wide" type="submit">保存房间草稿</button></form></div>`;
+	function merchantCard(item, knowledge, expanded = false) {
+		const guide = findPublicGuide(knowledge, item.id);
+		const title = guide?.question || item.question;
+		const confirmed = guide?.requiresHuman === false;
+		const content = `<p class="tag service-status">${confirmed ? "公开答复已确认；内部建议仍待店方确认" : "待店方确认"}</p>
+    <div class="fact-row service-checklist"><span>确认清单</span><p>${esc$5(guide?.confirmationChecklist || item.confirmationChecklist)}</p></div>
+    ${guide?.text ? `<div class="fact-row service-public-answer"><span>${confirmed ? "当前已确认公开答复" : "当前公开接待指引"}</span><p>${esc$5(guide.text)}</p></div>` : "<p class=\"small muted\">当前公开问答中无此条目；请先核对对客口径。</p>"}
+    <div class="fact-row service-internal-action"><span>内部动作建议</span><p>${esc$5(item.internalActionSummary)}</p></div>
+    <div class="fact-row"><span>责任岗位候选</span><p>${esc$5(item.roleCandidate)}</p></div>
+    <div class="fact-row"><span>整改优先级</span><p>${esc$5(item.priority)} · 原表建议，尚未形成整改任务</p></div>
+    ${sourceMarkup$1(item.sourceRef)}`;
+		const heading = `<span class="service-question-id">${esc$5(item.id)}</span> ${esc$5(title)}`;
+		return expanded ? `<article class="knowledge-item service-card" data-service-id="${esc$5(item.id)}"><h3>${heading}</h3>${content}</article>` : `<details class="knowledge-item service-card" data-service-id="${esc$5(item.id)}"><summary>${heading}</summary>${content}</details>`;
 	}
-	function spaceFormMarkup(state, id) {
-		const r = id === "new" ? {} : state.draft.spaces?.find((r) => r.id === id);
-		if (!r) return "<div class=\"page-pad\">空间不存在，请返回重新选择。</div>";
-		return `<div class="page-pad"><h1 class="page-title">${id === "new" ? "新增公共空间" : "编辑公共空间"}</h1><form id="unit-space-form" data-id="${esc$3(id)}">${field("空间名称", "name", r.name || "")}<label class="field">规则分类<select name="key">${[
-			["environment", "公共环境"],
-			["kitchen", "厨房"],
-			["parking", "停车"],
-			["wifi", "网络设施"]
-		].map(([k, l]) => `<option value="${k}" ${r.key === k ? "selected" : ""}>${l}</option>`).join("")}</select></label><label class="field">空间说明<textarea name="description" maxlength="500">${esc$3(r.description)}</textarea></label><label class="field">状态<select name="enabled"><option value="true" ${r.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${r.enabled === false ? "selected" : ""}>停用</option></select></label><button class="btn wide" type="submit">保存公共空间草稿</button></form></div>`;
+	function serviceDeskMarkup(propertyId, knowledge) {
+		if (propertyId !== "qinghuan-dali") return "";
+		return `<section class="service-desk"><p class="notice service-notice">${esc$5(notice)}</p>${phases.map((phase) => {
+			const items = serviceKnowledge.filter((item) => item.phase === phase);
+			return `<section class="editor-group service-phase"><h2>${esc$5(phase)} · ${items.length}问</h2>${items.map((item) => merchantCard(item, knowledge)).join("")}</section>`;
+		}).join("")}</section>`;
+	}
+	function ticketServiceMarkup(propertyId, ticket, knowledge) {
+		if (propertyId !== "qinghuan-dali") return "";
+		const ids = new Set(Array.isArray(ticket?.knowledgeIds) ? ticket.knowledgeIds : []);
+		const items = serviceKnowledge.filter((item) => ids.has(item.id));
+		if (!items.length) return "";
+		return `<section class="service-ticket"><h2>本次咨询的内部处置参考</h2><p class="notice service-notice">${esc$5(notice)}</p>${items.map((item) => merchantCard(item, knowledge, true)).join("")}</section>`;
+	}
+	function guestHandbookMarkup(propertyId, knowledge) {
+		if (propertyId !== "qinghuan-dali") return "";
+		const guides = [...new Map(publicGuides(knowledge).map((guide) => [guide.id, guide])).values()].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+		if (!guides.length) return "<section class=\"service-handbook\"><p class=\"notice\">暂无公开服务指引，请通过订单平台已有的商家联系入口确认。</p></section>";
+		return `<section class="service-handbook"><p class="notice service-notice">按入住阶段查找问题。待商家确认的内容不作为本店已提供服务的承诺；联系方式请从订单平台已有的商家联系入口获取。</p>${phases.map((phase) => {
+			const items = guides.filter((guide) => guide.phase === phase);
+			if (!items.length) return "";
+			return `<section class="editor-group service-phase"><h2>${esc$5(phase)} · ${items.length}问</h2>${items.map((guide) => {
+				const confirmed = guide.requiresHuman === false;
+				return `<details class="knowledge-item service-guide"><summary><span class="service-question-id">${esc$5(guide.id)}</span> ${esc$5(guide.question)}</summary><p class="tag service-status">${confirmed ? "已确认公开答复" : "待商家确认"}</p><p class="service-public-answer">${esc$5(guide.text)}</p>${confirmed ? "" : `<p class="small service-missing"><strong>待补充：</strong>${esc$5(publicMissing[guide.id])}</p>`}${publicSourceMarkup(guide)}<button class="text-btn service-ask" data-action="select-guide" data-knowledge="${esc$5(guide.id)}">就这个问题咨询</button></details>`;
+			}).join("")}</section>`;
+		}).join("")}</section>`;
 	}
 	//#endregion
 	//#region src/qinghuan.mjs
@@ -1338,7 +1827,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	//#endregion
 	//#region src/model.mjs
 	const clone$2 = (x) => structuredClone(x);
-	const own$1 = (obj, key) => Object.hasOwn(obj, key);
+	const own$2 = (obj, key) => Object.hasOwn(obj, key);
 	const norm$1 = (x) => String(x ?? "").normalize("NFKC").replace(/[\s？?。！!，,、]/g, "").toLowerCase();
 	const id = () => globalThis.crypto.randomUUID();
 	const TOPICS = {
@@ -1607,16 +2096,16 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	function guestThreads(state, sessionId) {
 		return Object.values(state.threads).filter((t) => t.owner === sessionId && t.propertyId === state.propertyId);
 	}
-	function text$1(value, label, max = 1e3) {
+	function text$3(value, label, max = 1e3) {
 		if (typeof value !== "string" || !value.trim() || value.trim().length > max) throw Error(`请填写${label}（1—${max}字）`);
 		return value.trim();
 	}
 	function validateDraft(d) {
 		if (!d || typeof d !== "object") throw Error("资料格式不正确");
-		text$1(d.name, "民宿名称", 40);
-		text$1(d.subtitle, "民宿短句", 80);
-		text$1(d.location, "位置", 200);
-		text$1(d.description, "民宿介绍", 1e3);
+		text$3(d.name, "民宿名称", 40);
+		text$3(d.subtitle, "民宿短句", 80);
+		text$3(d.location, "位置", 200);
+		text$3(d.description, "民宿介绍", 1e3);
 		for (const k of Object.keys(TOPICS)) if (d.facts[k]) {
 			if (typeof d.facts[k].text !== "string" || d.facts[k].text.length > 1e3) throw Error("使用规则需在1000字以内");
 		}
@@ -1628,18 +2117,18 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			"beds",
 			"capacity",
 			"bath"
-		]) text$1(r[k], "房间资料", 100);
+		]) text$3(r[k], "房间资料", 100);
 		if (d.vrUrl !== "https://tujia.realsee.cn/redJnEMB") throw Error("本轮仅使用已指定的VR参考案例");
-		if (d.vrLabel !== void 0) text$1(d.vrLabel, "VR入口说明", 80);
-		if (d.vrDescription !== void 0) text$1(d.vrDescription, "VR展示说明", 500);
+		if (d.vrLabel !== void 0) text$3(d.vrLabel, "VR入口说明", 80);
+		if (d.vrDescription !== void 0) text$3(d.vrDescription, "VR展示说明", 500);
 		if (d.knowledge.length > 50) throw Error("知识条目最多50条");
 		const keys = /* @__PURE__ */ new Set();
 		for (const k of d.knowledge) {
-			text$1(k.question, "公开问题", 200);
-			text$1(k.text, "公开答案", 1e3);
+			text$3(k.question, "公开问题", 200);
+			text$3(k.text, "公开答案", 1e3);
 			if (!Array.isArray(k.aliases) || k.aliases.length > 5) throw Error("相似问法最多5个");
 			for (const alias of [k.question, ...k.aliases]) {
-				text$1(alias, "问法", 200);
+				text$3(alias, "问法", 200);
 				const key = norm$1(alias);
 				if (keys.has(key)) throw Error("已有相同问法，请编辑原知识");
 				keys.add(key);
@@ -1666,11 +2155,11 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			"SET_VISIBLE"
 		].includes(type)) throw Error("未知操作");
 		const operationKey = action.operation ? `${ctx.sessionId}:${type}:${action.operation}` : null;
-		if (operationKey && own$1(state.operations, operationKey)) return state;
+		if (operationKey && own$2(state.operations, operationKey)) return state;
 		const s = clone$2(state), now = Date.now();
 		if (type === "ASK") {
 			if (!s.visible) throw Error("本民宿资料暂停展示，请联系管家");
-			const body = text$1(action.body, "问题");
+			const body = text$3(action.body, "问题");
 			let t;
 			if (action.threadId) {
 				t = s.threads[action.threadId];
@@ -1731,7 +2220,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			if (type === "ACCEPT" && ticket.status === "pending") ticket.status = "processing";
 			if (type === "REPLY") {
 				if (ticket.status === "replied") throw Error("这条咨询已回复，请勿重复发送");
-				const body = text$1(action.body, "回复");
+				const body = text$3(action.body, "回复");
 				const m = {
 					id: id(),
 					role: "merchant",
@@ -1754,13 +2243,13 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			const k = {
 				...previous,
 				id: knowledgeId,
-				question: text$1(action.question, "公开问题", 200),
-				text: text$1(action.text, "公开答案"),
-				aliases: (action.aliases ?? []).map((a) => text$1(a, "相似问法", 200))
+				question: text$3(action.question, "公开问题", 200),
+				text: text$3(action.text, "公开答案"),
+				aliases: (action.aliases ?? []).map((a) => text$3(a, "相似问法", 200))
 			};
 			if (previous?.kind === "confirmation_guide") {
-				if (own$1(action, "requiresHuman") && typeof action.requiresHuman !== "boolean") throw Error("请明确选择是否仍需人工确认");
-				k.requiresHuman = own$1(action, "requiresHuman") ? action.requiresHuman : previous.requiresHuman !== false;
+				if (own$2(action, "requiresHuman") && typeof action.requiresHuman !== "boolean") throw Error("请明确选择是否仍需人工确认");
+				k.requiresHuman = own$2(action, "requiresHuman") ? action.requiresHuman : previous.requiresHuman !== false;
 			}
 			if (idx < 0) s.draft.knowledge.push(k);
 			else s.draft.knowledge[idx] = k;
@@ -1784,6 +2273,753 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		if (operationKey) s.operations[operationKey] = true;
 		s.revision++;
 		return s;
+	}
+	//#endregion
+	//#region src/guide.mjs
+	const GUIDE_PHASES = [
+		{
+			id: "arrival",
+			label: "入住前"
+		},
+		{
+			id: "during",
+			label: "入住中"
+		},
+		{
+			id: "after",
+			label: "退房后"
+		}
+	];
+	const GUIDE_POINTS = [
+		{
+			id: "property",
+			label: "民宿位置"
+		},
+		{
+			id: "parking",
+			label: "停车点"
+		},
+		{
+			id: "entrance",
+			label: "实际入口"
+		}
+	];
+	const publishedSnapshot = (snapshot) => snapshot?.published ?? snapshot ?? {};
+	function guideOf(snapshot, propertyId) {
+		return experienceOf(publishedSnapshot(snapshot), propertyId).guide ?? emptyExperience(propertyId).guide;
+	}
+	function publicGuideRecords(records, propertyId, unitId = null) {
+		return (Array.isArray(records) ? records : []).filter((record) => publicRecord(record, propertyId, unitId));
+	}
+	function guideMapUrl(point, propertyId, unitId = null) {
+		if (!confirmedPoint(point, propertyId, unitId)) return "";
+		const coordinate = point.coordinate ?? "gaode";
+		if (!["gaode", "wgs84"].includes(coordinate)) return "";
+		return `https://uri.amap.com/marker?${new URLSearchParams({
+			position: `${point.lng},${point.lat}`,
+			name: point.address,
+			coordinate,
+			src: "minsu-demo",
+			callnative: "0"
+		})}`;
+	}
+	function guestPublishedItem(item, propertyId, unitId = null) {
+		if (!item || typeof item !== "object" || item.enabled === false || item.cancelled) return false;
+		if (item.propertyId && item.propertyId !== propertyId || item.unitId && item.unitId !== unitId) return false;
+		if (item.visibility && item.visibility !== "public") return false;
+		if (item.confirmation) return publicRecord({
+			...item,
+			propertyId: item.propertyId ?? propertyId,
+			visibility: item.visibility ?? "public"
+		}, propertyId, unitId);
+		if (item.validFrom && (!Number.isFinite(Date.parse(item.validFrom)) || Date.parse(item.validFrom) > Date.now())) return false;
+		if (item.validUntil && (!Number.isFinite(Date.parse(item.validUntil)) || Date.parse(item.validUntil) < Date.now())) return false;
+		return true;
+	}
+	function guideKind(item) {
+		const text = String(item?.question ?? item?.text ?? "");
+		if (/报修|故障|送站|接站|开票|发票|遗留|投诉|退款|退押金|补扫|代订|叫车|丢失|赔偿/.test(text)) return {
+			id: "request",
+			label: "服务需求 · 需管家确认"
+		};
+		if (/怎么用|如何使用|操作|热水|网络|Wi-Fi|wifi|门禁|找不到/.test(text)) return {
+			id: "operation",
+			label: "操作说明"
+		};
+		return {
+			id: "rule",
+			label: "规则与条件"
+		};
+	}
+	function handbookPhase(item, key = "") {
+		if (GUIDE_PHASES.some((p) => p.id === item?.phase)) return item.phase;
+		const phase = GUIDE_PHASES.find((p) => p.label === item?.phase);
+		if (phase) return phase.id;
+		const text = String(item?.question ?? "");
+		if (/退房|押金|发票|遗留|售后|退款|损坏/.test(text) || key === "price") return "after";
+		if ([
+			"parking",
+			"location",
+			"checkin"
+		].includes(key) || /到店|怎么走|停车|入住|接站/.test(text)) return "arrival";
+		return "during";
+	}
+	const text$2 = (value, label, max = 2e3) => {
+		const result = String(value ?? "").trim();
+		if (result.length > max) throw Error(`${label}请控制在${max}字以内`);
+		return result;
+	};
+	const pending$2 = () => ({
+		status: "pending",
+		by: "",
+		at: ""
+	});
+	function number$1(value, label, limit) {
+		if (String(value ?? "").trim() === "") return null;
+		const n = Number(value);
+		if (!Number.isFinite(n) || Math.abs(n) > limit) throw Error(`${label}无效，请核对坐标范围`);
+		return n;
+	}
+	function date$1(value, label) {
+		const result = text$2(value, label, 100);
+		if (result && !Number.isFinite(Date.parse(result))) throw Error(`${label}无效，请填写日期或ISO时间`);
+		return result || null;
+	}
+	function url(value) {
+		const raw = text$2(value, "链接", 2e3);
+		if (raw && !safeExternalUrl(raw)) throw Error("链接须为有效的http或https地址");
+		return raw;
+	}
+	function choice(value, allowed, label) {
+		if (!allowed.includes(value)) throw Error(`${label}无效`);
+		return value;
+	}
+	function count(form, name, previousLength, max) {
+		if (!form.has(name)) return previousLength;
+		const n = Number(form.get(name));
+		if (!Number.isInteger(n) || n < 0 || n > max) throw Error("指引或媒体条数无效");
+		return n;
+	}
+	function editRecord(form, prefix, previous, id, propertyId, fields) {
+		if (previous?.propertyId && previous.propertyId !== propertyId) throw Error("资料不属于当前房源");
+		const before = previous ? structuredClone(previous) : contentRecord(id, propertyId), next = structuredClone(before);
+		const set = (key, parse) => {
+			const name = `${prefix}.${key}`;
+			if (form.has(name)) next[key] = parse(form.get(name));
+		};
+		set("sourceLabel", (v) => text$2(v, "来源", 200) || "待补来源");
+		set("visibility", (v) => choice(v, [
+			"public",
+			"stay",
+			"internal"
+		], "可见范围"));
+		set("unitId", (v) => text$2(v, "适用单元", 100) || null);
+		set("enabled", (v) => choice(v, ["true", "false"], "启用状态") === "true");
+		set("validFrom", (v) => date$1(v, "生效日期"));
+		set("validUntil", (v) => date$1(v, "失效日期"));
+		for (const [key, parse] of Object.entries(fields)) set(key, parse);
+		if (next.validFrom && next.validUntil && Date.parse(next.validUntil) < Date.parse(next.validFrom)) throw Error("失效日期不能早于生效日期");
+		next.id = before.id;
+		next.propertyId = propertyId;
+		if (JSON.stringify(next) !== JSON.stringify(before)) next.confirmation = pending$2();
+		return next;
+	}
+	function readGuideForm(form, previousGuide, propertyId) {
+		if (!form || typeof form.has !== "function") throw Error("无法读取到店指引表单");
+		const previous = previousGuide ?? emptyExperience(propertyId).guide, next = structuredClone(previous);
+		next.points ??= {};
+		for (const { id } of GUIDE_POINTS) next.points[id] = editRecord(form, `point.${id}`, previous.points?.[id], id === "property" ? "property-location" : id, propertyId, {
+			address: (v) => text$2(v, "公开地址", 300),
+			lat: (v) => number$1(v, "纬度", 90),
+			lng: (v) => number$1(v, "经度", 180),
+			coordinate: (v) => choice(v, ["gaode", "wgs84"], "坐标系")
+		});
+		const stepCount = count(form, "steps.count", previous.steps?.length ?? 0, 20);
+		next.steps = [];
+		for (let i = 0; i < stepCount; i++) {
+			const old = previous.steps?.[i], record = editRecord(form, `step.${i}`, old, `guide-step-${crypto.randomUUID()}`, propertyId, {
+				title: (v) => text$2(v, "步骤标题", 100),
+				text: (v) => text$2(v, "操作步骤"),
+				phase: (v) => choice(v, GUIDE_PHASES.map((p) => p.id), "入住阶段")
+			});
+			if (old || record.text?.trim()) next.steps.push(record);
+		}
+		const mediaCount = count(form, "media.count", previous.media?.length ?? 0, 12);
+		next.media = [];
+		for (let i = 0; i < mediaCount; i++) {
+			const old = previous.media?.[i], record = editRecord(form, `media.${i}`, old, `guide-media-${crypto.randomUUID()}`, propertyId, {
+				type: (v) => choice(v, [
+					"image",
+					"video",
+					"link"
+				], "媒体类型"),
+				url,
+				text: (v) => text$2(v, "媒体说明"),
+				title: (v) => text$2(v, "媒体标题", 100),
+				phase: (v) => choice(v, GUIDE_PHASES.map((p) => p.id), "媒体阶段")
+			});
+			if (old || record.url || record.text?.trim()) next.media.push(record);
+		}
+		next.contact = editRecord(form, "contact", previous.contact, "contact", propertyId, {
+			text: (v) => text$2(v, "联系说明"),
+			url
+		});
+		return next;
+	}
+	//#endregion
+	//#region src/guide-ui.mjs
+	const esc$4 = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+		"&": "&amp;",
+		"<": "&lt;",
+		">": "&gt;",
+		"\"": "&quot;",
+		"'": "&#39;"
+	})[char]);
+	const source = (record) => `<p class="small muted guide-source">来源：${esc$4(record.sourceLabel || "公开资料")} · 确认：${esc$4(record.confirmation?.by || "已发布资料")} ${esc$4(record.confirmation?.at || "")}</p>`;
+	const ask$1 = (kind, id, question, label) => `<button type="button" class="text-btn guide-ask" data-action="guide-ask" data-kind="${kind}" data-id="${esc$4(id)}" data-question="${esc$4(question)}" data-label="${esc$4(label)}">带着这个问题咨询</button>`;
+	const multiline = (value) => esc$4(value).replaceAll("\n", "<br>");
+	function pointMarkup(record, key, label, propertyId, unitId) {
+		const visible = publicRecord(record, propertyId, unitId), map = visible ? guideMapUrl(record, propertyId, unitId) : "";
+		return `<article class="knowledge-item guide-point" data-guide-point="${key}"><h3>${label}</h3>${visible && record.address?.trim() ? `<p class="guide-address">${esc$4(record.address)}</p><div class="action-row">${map ? `<a class="text-btn" data-guide-navigation="${key}" href="${esc$4(map)}" target="_blank" rel="noopener noreferrer">打开地图导航</a>` : "<span class=\"small muted\">定位待补，暂不提供导航。</span>"}<button type="button" class="text-btn" data-action="guide-copy-address" data-id="${esc$4(record.id)}" data-address="${esc$4(record.address)}">复制${label}地址</button></div>${source(record)}` : "<p class=\"small muted\">此处的公开位置尚待确认，请向管家获取。不会以其他位置代替。</p>"}${ask$1("arrival", record?.id || key, `请确认${label}与到店走法。`, label)}</article>`;
+	}
+	function mediaMarkup(record) {
+		const href = safeExternalUrl(record.url), caption = record.text || record.title || "图文说明待补充";
+		let player = "";
+		if (href && record.type === "video") player = `<video class="guide-media" controls preload="none" playsinline data-guide-media="${esc$4(record.id)}" src="${esc$4(href)}">当前浏览器无法播放视频，请查看图文说明或联系管家。</video>`;
+		else if (href && record.type === "image") player = `<img class="guide-media" loading="lazy" data-guide-media="${esc$4(record.id)}" src="${esc$4(href)}" alt="${esc$4(record.title || "到店路线参考图")}" />`;
+		else if (href && record.type === "link") player = `<a class="text-btn" href="${esc$4(href)}" target="_blank" rel="noopener noreferrer" data-guide-external="${esc$4(record.id)}">打开${esc$4(record.title || "到店参考资料")} ↗</a>`;
+		return `<figure class="knowledge-item guide-media-card"><figcaption><h3>${esc$4(record.title || "到店图文与视频")}</h3><p>${multiline(caption)}</p></figcaption>${player}<p class="small muted guide-media-fallback" data-guide-media-fallback="${esc$4(record.id)}">${href ? "如视频、图片或外链加载失败，可继续按图文说明查看；仍找不到时使用下方联系出口。" : "媒体链接缺失或不可用，请按图文说明查看，或使用下方联系出口。"}</p>${source(record)}</figure>`;
+	}
+	function contactMarkup(record, propertyId, unitId) {
+		const visible = publicRecord(record, propertyId, unitId), href = visible ? safeExternalUrl(record.url) : "";
+		return `<section class="editor-group guide-contact" id="guide-contact"><h2>找不到时，联系管家</h2>${visible && record.text?.trim() ? `<p>${multiline(record.text)}</p>${href ? `<a class="text-btn" href="${esc$4(href)}" target="_blank" rel="noopener noreferrer">打开已确认联系入口 ↗</a>` : ""}${source(record)}` : "<p>本店对客联系方式与接待时段待确认。请通过原订单平台已有的商家联系入口联系管家。</p>"}${ask$1("arrival", record?.id || "contact", "我找不到入口，请管家协助确认到店路线。", "到店联系")}</section>`;
+	}
+	function arrivalMarkup(snapshot, propertyId, unitId = null) {
+		const p = publishedSnapshot(snapshot), guide = guideOf(p, propertyId), steps = publicGuideRecords(guide.steps, propertyId, unitId).filter((s) => !s.phase || s.phase === "arrival"), media = publicGuideRecords(guide.media, propertyId, unitId).filter((m) => !m.phase || m.phase === "arrival");
+		return `<section class="arrival-guide"><p class="notice">${esc$4(experienceOf(p, propertyId).dataIdentity)}。先核对入口和停车点，再打开地图；地图无法打开时可复制已公开地址。</p><section class="editor-group"><h2>如何到店</h2><p class="small muted">民宿位置、停车点和实际入口分别核对。</p>${GUIDE_POINTS.map(({ id, label }) => pointMarkup(guide.points?.[id], id, label, propertyId, unitId)).join("")}</section><section class="editor-group"><h2>下车后，最后一段路</h2>${steps.length ? `<ol class="guide-steps">${steps.map((s) => `<li><h3>${esc$4(s.title || "到店步骤")}</h3><p>${multiline(s.text)}</p>${source(s)}${ask$1("arrival", s.id, "请说明这一步：" + (s.title || s.text), "到店指引 · " + (s.title || "操作步骤"))}</li>`).join("")}</ol>` : "<p class=\"small muted\">本店路书图文、地标和夜间提示待补。请向管家核对，不按社区中心点推测房门位置。</p>"}</section><section class="editor-group"><h2>图文和视频</h2>${media.length ? media.map(mediaMarkup).join("") : "<p class=\"notice\">暂无已确认的视频或图片。已有文字说明仍可查看；需要带路时请使用下方联系出口。</p>"}</section>${contactMarkup(guide.contact, propertyId, unitId)}</section>`;
+	}
+	const factLabels = {
+		parking: "停车说明",
+		location: "位置与交通",
+		checkin: "入住与退房",
+		kitchen: "厨房规则",
+		wifi: "网络与设备使用",
+		breakfast: "早餐说明",
+		environment: "公共空间",
+		pets: "宠物规则",
+		accessibility: "通行说明",
+		barbecue: "烧烤规则",
+		price: "费用与订单说明"
+	};
+	function legacyHandbook(p, propertyId) {
+		const facts = Object.entries(p.facts ?? {}).filter(([, item]) => guestPublishedItem(item, propertyId)).map(([key, item]) => ({
+			...item,
+			id: `fact:${key}`,
+			question: factLabels[key] || key,
+			phase: handbookPhase(item, key)
+		}));
+		const knowledge = (p.knowledge ?? []).filter((item) => guestPublishedItem(item, propertyId)).map((item) => ({
+			...item,
+			phase: handbookPhase(item)
+		}));
+		return GUIDE_PHASES.map((phase) => {
+			const items = [...facts, ...knowledge].filter((item) => item.phase === phase.id);
+			return `<section class="editor-group service-phase" data-guide-phase="${phase.id}"><h2>${phase.label}</h2>${items.length ? items.map((item) => {
+				const kind = guideKind(item);
+				return `<details class="knowledge-item service-guide"><summary>${esc$4(item.question)}</summary><p class="tag">${kind.label}</p><p>${multiline(item.text)}</p><p class="small muted">来源：${esc$4(item.sourceLabel || "本店当前公开资料")} · 公开版 v${esc$4(p.version ?? 0)}</p>${ask$1("guide", item.id, item.question, item.question)}</details>`;
+			}).join("") : "<p class=\"small muted\">此阶段暂无本店公开说明，可带问题咨询管家。</p>"}</section>`;
+		}).join("");
+	}
+	function handbookMarkup(propertyId, snapshot) {
+		const p = publishedSnapshot(snapshot), guide = guideOf(p, propertyId), steps = publicGuideRecords(guide.steps, propertyId), media = publicGuideRecords(guide.media, propertyId);
+		let original = "";
+		if (propertyId === "qinghuan-dali") {
+			const knowledge = (p.knowledge ?? []).filter((item) => guestPublishedItem({
+				...item,
+				confirmation: void 0,
+				validFrom: null,
+				validUntil: null
+			}, propertyId)).map((item) => {
+				if (guestPublishedItem(item, propertyId)) return { ...item };
+				return {
+					...item,
+					requiresHuman: true,
+					text: "这道题的本店答复尚待商家确认，请向管家核对。"
+				};
+			});
+			const facts = Object.fromEntries(Object.entries(p.facts ?? {}).filter(([, item]) => guestPublishedItem(item, propertyId)));
+			const current = {
+				...p,
+				facts,
+				knowledge
+			};
+			const displayKnowledge = knowledge.map((item) => {
+				const response = answer({
+					propertyId,
+					visible: true,
+					published: current
+				}, item.question);
+				return {
+					...item,
+					text: response.body,
+					requiresHuman: response.status !== "answered"
+				};
+			});
+			original = guestHandbookMarkup(propertyId, displayKnowledge).replace(/<button class="text-btn service-ask" data-action="select-guide" data-knowledge="(Q\d{2})">[^<]*<\/button>/g, (button, id) => {
+				const item = displayKnowledge.find((k) => k.id === id);
+				return item ? `<p class="tag">${guideKind(item).label}</p>${ask$1("guide", id, item.question, `${id} · ${item.question}`)}` : "";
+			});
+		} else original = legacyHandbook(p, propertyId);
+		const extras = GUIDE_PHASES.map((phase) => {
+			const phaseSteps = steps.filter((s) => handbookPhase(s) === phase.id), phaseMedia = media.filter((m) => handbookPhase(m) === phase.id);
+			if (!phaseSteps.length && !phaseMedia.length) return "";
+			return `<section class="editor-group" data-guide-phase="${phase.id}"><h2>${phase.label} · 本店操作指引</h2>${phaseSteps.map((s) => `<article class="knowledge-item"><h3>${esc$4(s.title || "操作步骤")}</h3><p>${multiline(s.text)}</p>${source(s)}${ask$1("guide", s.id, "请说明：" + (s.title || s.text), s.title || "本店操作")}</article>`).join("")}${phaseMedia.map(mediaMarkup).join("")}</section>`;
+		}).join("");
+		return `<section class="stay-handbook"><p class="notice">入住前、入住中、退房后三阶段查找。规则说明条件，操作查看步骤；服务需求需管家确认，提交咨询不代表已办理。</p><a class="text-btn" href="#/guest/arrival">如何到店与停车 →</a>${original}${extras}</section>`;
+	}
+	const input = (prefix, key, label, value, type = "text") => `<label class="field">${label}<input type="${type}" name="${prefix}.${key}" value="${esc$4(value)}" ${type === "number" ? "step=\"any\"" : ""}/></label>`;
+	const area = (prefix, key, label, value) => `<label class="field">${label}<textarea name="${prefix}.${key}" rows="3">${esc$4(value)}</textarea></label>`;
+	const select = (prefix, key, label, value, options) => `<label class="field">${label}<select name="${prefix}.${key}">${options.map(([id, name]) => `<option value="${esc$4(id)}" ${String(value) === id ? "selected" : ""}>${esc$4(name)}</option>`).join("")}</select></label>`;
+	function metadata(prefix, record, p) {
+		const units = [
+			["", "本房源全部单元"],
+			...p.rentalMode === "whole" ? [["whole", "整院"]] : [],
+			...(p.rooms ?? []).map((room) => [room.id, room.name])
+		];
+		return `<details class="guide-record-metadata"><summary>来源、适用范围与有效期 · ${record.confirmation?.status === "confirmed" ? "已确认" : "待确认"}</summary>${input(prefix, "sourceLabel", "资料来源", record.sourceLabel)}${select(prefix, "unitId", "适用单元", record.unitId || "", units)}${select(prefix, "visibility", "可见范围", record.visibility || "public", [
+			["public", "公开访客"],
+			["stay", "仅获授权住客（本地原型不展示凭据）"],
+			["internal", "仅商家内部"]
+		])}${select(prefix, "enabled", "启用状态", record.enabled !== false ? "true" : "false", [["true", "启用"], ["false", "停用"]])}${input(prefix, "validFrom", "生效日期（可留空）", record.validFrom)}${input(prefix, "validUntil", "失效日期（可留空）", record.validUntil)}<p class="small muted">确认人：${esc$4(record.confirmation?.by || "待确认")}；确认日期：${esc$4(record.confirmation?.at || "待确认")}。修改内容或范围后须重新确认。</p></details>`;
+	}
+	function guideEditorMarkup(snapshot, propertyId) {
+		const p = snapshot?.draft ?? snapshot ?? {}, guide = experienceOf(p, propertyId).guide;
+		const steps = [...guide.steps ?? [], {}], media = [...guide.media ?? [], {}];
+		return `<form id="guide-editor-form" class="guide-editor"><h2>到店与住店指南</h2><p class="notice">修改仅保存为草稿。确认与发布另行操作，保存不会影响客人当前公开内容。请勿填写真实门锁、门禁或Wi-Fi密码、客人身份及订单资料，只写获授权后的获取方式。</p>${GUIDE_POINTS.map(({ id, label }) => {
+			const r = guide.points?.[id] ?? {}, prefix = `point.${id}`;
+			return `<fieldset class="editor-group"><legend>${label}</legend>${input(prefix, "address", "公开地址 / 地标", r.address)}${input(prefix, "lat", "纬度（无定位可留空）", r.lat, "number")}${input(prefix, "lng", "经度（无定位可留空）", r.lng, "number")}${select(prefix, "coordinate", "坐标系", r.coordinate || "gaode", [["gaode", "高德 GCJ-02"], ["wgs84", "GPS WGS84"]])}${metadata(prefix, r, p)}</fieldset>`;
+		}).join("")}<fieldset class="editor-group"><legend>图文操作步骤</legend><input type="hidden" name="steps.count" value="${steps.length}"/>${steps.map((r, i) => {
+			const prefix = `step.${i}`;
+			return `<details class="knowledge-item" ${i === steps.length - 1 ? "open" : ""}><summary>${i === steps.length - 1 ? "新增一条步骤" : esc$4(r.title || `步骤 ${i + 1}`)}</summary>${input(prefix, "title", "步骤标题", r.title)}${area(prefix, "text", "步骤说明（新增留空则不保存）", r.text)}${select(prefix, "phase", "入住阶段", r.phase || "arrival", GUIDE_PHASES.map((p) => [p.id, p.label]))}${metadata(prefix, r, p)}</details>`;
+		}).join("")}</fieldset><fieldset class="editor-group"><legend>图片、视频与外链</legend><input type="hidden" name="media.count" value="${media.length}"/>${media.map((r, i) => {
+			const prefix = `media.${i}`;
+			return `<details class="knowledge-item" ${i === media.length - 1 ? "open" : ""}><summary>${i === media.length - 1 ? "新增媒体" : esc$4(r.title || `媒体 ${i + 1}`)}</summary>${input(prefix, "title", "媒体标题", r.title)}${select(prefix, "type", "媒体类型", r.type || "video", [
+				["video", "视频"],
+				["image", "图片"],
+				["link", "外部参考链接"]
+			])}${input(prefix, "url", "公开链接（http/https）", r.url, "url")}${area(prefix, "text", "图文 / 加载失败时的说明", r.text)}${select(prefix, "phase", "入住阶段", r.phase || "arrival", GUIDE_PHASES.map((p) => [p.id, p.label]))}${metadata(prefix, r, p)}</details>`;
+		}).join("")}</fieldset><fieldset class="editor-group"><legend>迷路与服务联系出口</legend>${area("contact", "text", "联系获取方式、服务时段及非服务时段说明", guide.contact?.text)}${input("contact", "url", "获准公开的联系页面链接", guide.contact?.url, "url")}${metadata("contact", guide.contact ?? {}, p)}</fieldset><button type="submit" class="btn wide">保存指南草稿</button><p class="small muted">测试确认不代表真实店方确认。真实联系方式、定位和素材授权缺失时继续保留待补。</p></form>`;
+	}
+	//#endregion
+	//#region src/icons.mjs
+	const paths = {
+		home: "<path d=\"m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z\"/><path d=\"M9 21v-8h6v8\"/>",
+		house: "<path d=\"m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8\"/><path d=\"M17 3v4\"/>",
+		panorama: "<path d=\"M3 6c6 3 12 3 18 0v12c-6-3-12-3-18 0Z\"/><path d=\"m7 14 3-3 3 3 3-2 3 3\"/><circle cx=\"16\" cy=\"9\" r=\"1\"/>",
+		chat: "<path d=\"M21 11a8 8 0 0 1-8 8H8l-5 3v-7a8 8 0 0 1 8-12h2a8 8 0 0 1 8 8Z\"/><path d=\"M8 11h.01M12 11h.01M16 11h.01\"/>",
+		bed: "<path d=\"M3 18v3m18-3v3M3 18h18V11H3ZM5 11V5h14v6M7 11V8h4v3m2 0V8h4v3\"/>",
+		arrow: "<path d=\"M4 12h16m-6-6 6 6-6 6\"/>",
+		chevron: "<path d=\"m9 5 7 7-7 7\"/>",
+		back: "<path d=\"m15 5-7 7 7 7\"/>",
+		pin: "<path d=\"M19 9c0 6-7 12-7 12S5 15 5 9a7 7 0 0 1 14 0Z\"/><circle cx=\"12\" cy=\"9\" r=\"2.4\"/>",
+		leaf: "<path d=\"M20 3C7 2 2 8 5 15c3 7 14 6 15-12ZM4 21 15 10\"/>",
+		spark: "<path d=\"m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z\"/><path d=\"m21 2 .5 1.5L23 4l-1.5.5L21 6l-.5-1.5L19 4l1.5-.5Z\"/>",
+		parking: "<rect x=\"4\" y=\"3\" width=\"16\" height=\"18\" rx=\"3\"/><path d=\"M10 17V7h3a3 3 0 0 1 0 6h-3\"/>",
+		kitchen: "<path d=\"M4 3v6a3 3 0 0 0 6 0V3M7 3v18m12 0V3c-4 0-5 8-1 9h1\"/>",
+		clock: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>",
+		check: "<path d=\"m5 12 4 4L19 6\"/>",
+		close: "<path d=\"m6 6 12 12M6 18 18 6\"/>",
+		send: "<path d=\"m12 5 7 7m-7-7-7 7m7-7v15\"/>",
+		book: "<path d=\"M12 5v16M3 3h4a5 5 0 0 1 5 2 5 5 0 0 1 5-2h4v16h-4a5 5 0 0 0-5 2 5 5 0 0 0-5-2H3Z\"/>",
+		person: "<circle cx=\"12\" cy=\"7\" r=\"4\"/><path d=\"M4 21v-2a8 8 0 0 1 16 0v2\"/>",
+		users: "<circle cx=\"9\" cy=\"7\" r=\"3\"/><path d=\"M3 21v-3a6 6 0 0 1 12 0v3m1-17a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5v2\"/>",
+		bell: "<path d=\"M5 9a7 7 0 0 1 14 0v6l2 3H3l2-3Zm5 12h4\"/>",
+		edit: "<path d=\"m14 5 5 5M4 20l5-1L21 7l-5-5L4 14Z\"/>",
+		wifi: "<path d=\"M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-10 4a5 5 0 0 1 6 0\"/><circle cx=\"12\" cy=\"20\" r=\".6\"/>",
+		shield: "<path d=\"m12 2 8 3v6c0 6-8 11-8 11S4 17 4 11V5Z\"/><path d=\"m8 11 3 3 5-6\"/>",
+		external: "<path d=\"M14 3h7v7m0-7L10 14M10 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6\"/>",
+		plus: "<path d=\"M12 5v14M5 12h14\"/>",
+		refresh: "<path d=\"M20 7v5h-5M4 17v-5h5\"/><path d=\"M5 7a8 8 0 0 1 13-2l2 7M4 12l2 7a8 8 0 0 0 13-2\"/>",
+		expand: "<path d=\"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5\"/>",
+		image: "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"m3 16 6-6 7 7 3-3 2 2\"/><circle cx=\"16\" cy=\"8\" r=\"1\"/>",
+		more: "<circle cx=\"5\" cy=\"12\" r=\"1\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/>",
+		battery: "<rect x=\"2\" y=\"6\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M23 10v4M5 9h11v6H5Z\"/>",
+		signal: "<path d=\"M4 20v-4m5 4v-8m5 8V8m5 12V4\"/>",
+		heart: "<path d=\"M20 5a5 5 0 0 0-8 1 5 5 0 0 0-8-1c-5 5 3 12 8 16 5-4 13-11 8-16Z\"/>"
+	};
+	const icon = (name, cls = "") => `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.home}</svg>`;
+	//#endregion
+	//#region src/recommendations.mjs
+	const parties$1 = {
+		family: "亲子",
+		couple: "两人同行",
+		senior: "长辈同行",
+		solo: "独自出行"
+	};
+	const periods$1 = {
+		half: "半天",
+		day: "一天"
+	};
+	const collections = {
+		place: "places",
+		route: "routes",
+		benefit: "benefits"
+	};
+	const copy = (value) => structuredClone(value);
+	const own$1 = (value, key) => Object.hasOwn(value, key);
+	function collection(snapshot, scope, key) {
+		const values = experienceOf(snapshot, scope?.propertyId).recommendations?.[key];
+		return Array.isArray(values) ? values : [];
+	}
+	function available(item, scope, now) {
+		return !!scope?.propertyId && publicRecord(item, scope.propertyId, scope.unitId ?? null, now) && typeof item.id === "string" && !!item.id && typeof item.name === "string" && !!item.name.trim() && typeof item.sourceLabel === "string" && !!item.sourceLabel.trim() && item.sourceLabel.trim() !== "待补来源" && item.status !== "cancelled" && item.status !== "ended" && item.status !== "disabled";
+	}
+	function findUnique(items, id) {
+		const matches = items.filter((item) => item.id === id);
+		return matches.length === 1 ? matches[0] : null;
+	}
+	function placesFor(snapshot, scope, now) {
+		const items = collection(snapshot, scope, "places");
+		return items.filter((item) => available(item, scope, now) && findUnique(items, item.id) === item);
+	}
+	function routeAvailable(route, places, scope, now) {
+		return available(route, scope, now) && !!periods$1[route.period] && Number.isFinite(route.durationMinutes) && route.durationMinutes > 0 && (route.period !== "half" || route.durationMinutes <= 240) && Array.isArray(route.placeIds) && route.placeIds.length > 0 && route.placeIds.every((id) => places.some((place) => place.id === id));
+	}
+	function recommendedPlaceById(id, snapshot, scope, { now = Date.now() } = {}) {
+		const item = findUnique(placesFor(snapshot, scope, now), id);
+		return item ? copy(item) : null;
+	}
+	function recommendedRouteById(id, snapshot, scope, { now = Date.now() } = {}) {
+		const route = findUnique(collection(snapshot, scope, "routes"), id), places = placesFor(snapshot, scope, now);
+		return route && routeAvailable(route, places, scope, now) ? copy(route) : null;
+	}
+	function benefitPlaceIds(item) {
+		return [...new Set([item.placeId, ...Array.isArray(item.placeIds) ? item.placeIds : []].filter(Boolean))];
+	}
+	function recommendationBenefits(snapshot, scope, placeId, { now = Date.now() } = {}) {
+		const places = placesFor(snapshot, scope, now), ids = new Set(places.map((place) => place.id));
+		return collection(snapshot, scope, "benefits").filter((item) => {
+			const linked = benefitPlaceIds(item);
+			return available(item, scope, now) && linked.length > 0 && linked.every((id) => ids.has(id)) && (!placeId || linked.includes(placeId));
+		}).map(copy);
+	}
+	function filtersOf(filters) {
+		return {
+			period: periods$1[filters.period] ? filters.period : "all",
+			party: parties$1[filters.party] ? filters.party : "all"
+		};
+	}
+	function matches(item, filters) {
+		return (filters.period === "all" || item.period === filters.period && (filters.period !== "half" || Number.isFinite(item.durationMinutes) && item.durationMinutes > 0 && item.durationMinutes <= 240)) && (filters.party === "all" || Array.isArray(item.party) && item.party.includes(filters.party));
+	}
+	function selectRecommendations(snapshot, scope, filters = {}) {
+		const now = filters.now ?? Date.now(), current = filtersOf(filters), allPlaces = placesFor(snapshot, scope, now), allRoutes = collection(snapshot, scope, "routes");
+		const limit = Number.isFinite(Number(filters.limit)) ? Math.max(1, Math.min(5, Math.floor(Number(filters.limit)))) : 5;
+		const places = allPlaces.filter((item) => matches(item, current)).slice(0, limit);
+		const routes = allRoutes.filter((item) => routeAvailable(item, allPlaces, scope, now) && findUnique(allRoutes, item.id) === item && matches(item, current)).slice(0, 2);
+		const selectedIds = /* @__PURE__ */ new Set([...places.map((item) => item.id), ...routes.flatMap((item) => item.placeIds)]);
+		const benefits = recommendationBenefits(snapshot, scope, null, { now }).filter((item) => benefitPlaceIds(item).some((id) => selectedIds.has(id)));
+		const selection = [periods$1[current.period], parties$1[current.party]].filter(Boolean).join(" · ");
+		const emptyReason = places.length || routes.length ? "" : selection ? `暂无符合${selection}条件的已核实推荐；需补充对应地点、时长及适合条件。` : "暂无已核实推荐；店方确认并发布后会出现在这里。";
+		return {
+			places: places.map(copy),
+			routes: routes.map(copy),
+			benefits,
+			filters: current,
+			emptyReason
+		};
+	}
+	function recommendationReason(record, filters = {}) {
+		const selected = filtersOf(filters), reasons = [];
+		if (selected.period !== "all" && record.period === selected.period) reasons.push(`适合${periods$1[selected.period]}安排`);
+		else if (periods$1[record.period]) reasons.push(`建议按${periods$1[record.period]}安排`);
+		if (selected.party !== "all" && record.party?.includes(selected.party)) reasons.push(`资料标注适合${parties$1[selected.party]}`);
+		else if (record.party?.length) reasons.push(`适合${record.party.map((value) => parties$1[value]).filter(Boolean).join("、")}`);
+		if (Number.isFinite(record.durationMinutes) && record.durationMinutes > 0) reasons.push(`建议停留约${record.durationMinutes}分钟`);
+		return reasons.join("；") || "适合条件与停留时间待补充，可先查看详情。";
+	}
+	function recommendationNavigation(record, scope) {
+		const address = typeof record?.address === "string" ? record.address.trim() : "";
+		if (!scope?.propertyId || !confirmedPoint(record, scope.propertyId, scope.unitId ?? null)) return {
+			url: "",
+			address,
+			available: false
+		};
+		const url = new URL("https://uri.amap.com/marker");
+		url.searchParams.set("position", `${record.lng},${record.lat}`);
+		url.searchParams.set("name", record.name || address);
+		url.searchParams.set("coordinate", "gaode");
+		url.searchParams.set("callnative", "0");
+		return {
+			url: safeExternalUrl(url.href),
+			address,
+			available: true
+		};
+	}
+	function recommendationTransport(record, snapshot, scope) {
+		if (record?.transportConfirmed !== true) return "交通方式、车程与使用条件待核实。";
+		const points = experienceOf(snapshot, scope?.propertyId).guide?.points ?? {};
+		if (![points.entrance, points.property].some((point) => confirmedPoint(point, scope?.propertyId, scope?.unitId ?? null))) return "本房源准确出发点尚未确认，车程与距离待核实；可先查看目的地位置。";
+		return record.transport?.trim() || "交通方式待补充。";
+	}
+	function recommendationContext(kind, id, snapshot, scope) {
+		const item = kind === "place" ? recommendedPlaceById(id, snapshot, scope) : kind === "route" ? recommendedRouteById(id, snapshot, scope) : null;
+		return item ? {
+			kind,
+			id: item.id,
+			label: item.name,
+			propertyId: scope.propertyId,
+			unitId: scope.unitId ?? null,
+			version: snapshot.version,
+			collection: "recommendations"
+		} : null;
+	}
+	function value(form, key, previous, fallback = "") {
+		return form.has(key) ? String(form.get(key) ?? "").trim() : String(previous?.[key] ?? fallback).trim();
+	}
+	function text$1(value, label, { required = false, max = 1e3 } = {}) {
+		if (required && !value || value.length > max) throw Error(`请填写${label}${required ? "" : "（可留空）"}，最多${max}字`);
+		return value;
+	}
+	function number(form, key, previous, label, max) {
+		const raw = value(form, key, previous);
+		if (raw === "") return null;
+		const result = Number(raw);
+		if (!Number.isFinite(result) || Math.abs(result) > max) throw Error(`${label}格式不正确`);
+		return result;
+	}
+	function checked(form, key) {
+		return form.has(key) && ![
+			"false",
+			"0",
+			"off",
+			""
+		].includes(String(form.get(key)));
+	}
+	function date(form, key, previous) {
+		const raw = value(form, key, previous);
+		if (raw && !Number.isFinite(Date.parse(raw))) throw Error("有效期日期格式不正确");
+		return raw || null;
+	}
+	function readRecommendationForm(form, previous, propertyId) {
+		if (typeof propertyId !== "string" || !propertyId.trim()) throw Error("房源身份缺失");
+		if (previous && previous.propertyId !== propertyId) throw Error("资料不属于当前房源");
+		const kind = value(form, "kind", previous, "place");
+		if (!own$1(collections, kind)) throw Error("请选择地点、路线或权益说明");
+		if (previous?.kind && previous.kind !== kind) throw Error("不能改变现有资料类型，请另行新增");
+		const incomingId = value(form, "id", null);
+		if (incomingId && (!previous || incomingId !== previous.id)) throw Error("资料编号与当前编辑对象不一致");
+		const id = previous?.id || crypto.randomUUID(), result = {
+			...contentRecord(id, propertyId),
+			...copy(previous ?? {}),
+			kind,
+			id,
+			propertyId
+		};
+		for (const key of [
+			"name",
+			"address",
+			"description",
+			"sourceLabel",
+			"transport",
+			"booking",
+			"fee",
+			"parentPlaceId"
+		]) result[key] = text$1(value(form, key, previous), key === "name" ? "名称" : key === "sourceLabel" ? "资料来源" : "说明", {
+			required: key === "name" || key === "sourceLabel",
+			max: key === "name" ? 100 : 1e3
+		});
+		result.unitId = value(form, "unitId", previous) || null;
+		result.visibility = value(form, "visibility", previous, "public");
+		if (![
+			"public",
+			"resident",
+			"internal"
+		].includes(result.visibility)) throw Error("请选择可见范围");
+		result.enabled = checked(form, "enabled");
+		result.cancelled = checked(form, "cancelled");
+		result.lat = number(form, "lat", previous, "纬度", 90);
+		result.lng = number(form, "lng", previous, "经度", 180);
+		result.durationMinutes = number(form, "durationMinutes", previous, "时长", 1440);
+		if (result.durationMinutes !== null && result.durationMinutes <= 0) throw Error("建议时长必须大于0分钟");
+		result.period = value(form, "period", previous);
+		if (result.period === "all") result.period = "";
+		if (result.period && !own$1(periods$1, result.period)) throw Error("请选择半天或一天");
+		result.party = [...new Set(form.getAll("party").map(String))];
+		if (result.party.some((item) => !own$1(parties$1, item))) throw Error("同行偏好选项不正确");
+		result.sourceUrl = value(form, "sourceUrl", previous);
+		if (result.sourceUrl && !safeExternalUrl(result.sourceUrl)) throw Error("来源链接请填写http或https网址");
+		result.validFrom = date(form, "validFrom", previous);
+		result.validUntil = date(form, "validUntil", previous);
+		if (result.validFrom && result.validUntil && Date.parse(result.validUntil) < Date.parse(result.validFrom)) throw Error("有效结束日期不能早于开始日期");
+		for (const field of [
+			"transport",
+			"booking",
+			"fee"
+		]) result[field + "Confirmed"] = checked(form, field + "Confirmed");
+		if (kind === "route") {
+			result.placeIds = [...new Set(value(form, "placeIds", null, previous?.placeIds?.join(",") ?? "").split(/[,，\n]/).map((item) => item.trim()).filter(Boolean))];
+			if (!result.placeIds.length) throw Error("请填写路线地点编号");
+			if (!result.period || !result.durationMinutes) throw Error("请填写路线适用半天或一天及自己的建议时长");
+			if (result.period === "half" && result.durationMinutes > 240) throw Error("半天路线建议时长需在240分钟以内，请另做半日安排或选择一天");
+		}
+		if (kind === "benefit") {
+			result.placeIds = [...new Set(value(form, "placeIds", null, previous?.placeIds?.join(",") ?? previous?.placeId ?? "").split(/[,，\n]/).map((item) => item.trim()).filter(Boolean))];
+			result.placeId = form.has("placeId") ? value(form, "placeId", null) : form.has("placeIds") ? result.placeIds[0] || "" : previous?.placeId || result.placeIds[0] || "";
+			if (!result.placeId) throw Error("请填写权益适用的地点编号");
+		}
+		result.confirmation = {
+			status: "pending",
+			by: "",
+			at: ""
+		};
+		return result;
+	}
+	//#endregion
+	//#region src/recommendations-ui.mjs
+	const esc$3 = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+		"&": "&amp;",
+		"<": "&lt;",
+		">": "&gt;",
+		"\"": "&quot;",
+		"'": "&#39;"
+	})[char]);
+	const periods = [
+		["all", "时间不限"],
+		["half", "半天"],
+		["day", "一天"]
+	];
+	const parties = [
+		["all", "同行不限"],
+		["family", "亲子同行"],
+		["couple", "两人同行"],
+		["senior", "长辈同行"],
+		["solo", "独自出行"]
+	];
+	const kinds = {
+		place: "地点",
+		route: "路线",
+		benefit: "权益说明"
+	};
+	const libraryButton = () => "<button class=\"btn secondary wide\" data-action=\"show-content-library\">完整资料搜索 · 85条记录与5条主题路线</button>";
+	const duration = (item) => Number.isFinite(item.durationMinutes) && item.durationMinutes > 0 ? `建议${item.durationMinutes}分钟` : "建议时长待补充";
+	const identity = (snapshot, item = {}) => {
+		const label = item.dataIdentity || snapshot.experience?.dataIdentity || "资料身份待确认";
+		return `<span class="tag">${esc$3(label)}${/测试|原型/.test(label) || /测试/.test(item.confirmation?.by || "") ? " · 演示确认" : ""}</span>`;
+	};
+	const unavailable$1 = () => `<div class="page-pad empty-state"><h1 class="page-title">这条推荐暂不可用</h1><p>未找到当前房源范围内已确认且仍有效的资料，请返回周边推荐重新选择。</p><button class="btn secondary wide" data-action="nav" data-route="guest/life">返回周边推荐</button></div>`;
+	function sourceMarkup(item, snapshot) {
+		const url = safeExternalUrl(item.sourceUrl);
+		return `<section class="content-section"><h2>资料来源</h2><p>${esc$3(item.sourceLabel || "来源待补充")}</p>${url ? `<a class="text-btn" href="${esc$3(url)}" target="_blank" rel="noopener noreferrer">查看原始来源 ${icon("external")}</a>` : ""}<p class="small muted">${esc$3(item.confirmation?.by || "确认人待补充")} · ${esc$3(item.confirmation?.at || "确认日期待补充")} · 公开资料 V${esc$3(snapshot.version ?? 0)}</p></section>`;
+	}
+	function navigationMarkup(item, scope) {
+		const nav = recommendationNavigation(item, scope);
+		return `<section class="content-section"><h2>位置与导航</h2><p>${esc$3(nav.address || "具体地址待补充，请向管家确认。")}</p>${nav.available && nav.url ? `<a class="btn secondary wide" href="${esc$3(nav.url)}" target="_blank" rel="noopener noreferrer">打开已确认地点导航 ${icon("external")}</a>` : "<p class=\"notice\">定位尚待核验，暂不提供导航入口。</p>"}${nav.address ? `<label class="field">地址可复制<input readonly aria-label="可复制的推荐地址" value="${esc$3(nav.address)}"></label><button class="text-btn" data-action="copy-recommendation-address" data-address="${esc$3(nav.address)}">复制地址</button>` : ""}<p class="small muted">导航无法打开时，可复制地址到地图中查询；实际出行前请确认开放及交通情况。</p></section>`;
+	}
+	function factsMarkup(item, snapshot, scope) {
+		return `<dl class="detail-grid"><div><dt>建议时长</dt><dd>${esc$3(duration(item))}</dd></div><div><dt>适用安排</dt><dd>${esc$3(periods.find(([id]) => id === item.period)?.[1] || "适用时段待确认")}</dd></div><div><dt>交通</dt><dd>${esc$3(recommendationTransport(item, snapshot, scope))}</dd></div><div><dt>预约</dt><dd>${esc$3(item.bookingConfirmed === true ? item.booking || "已核验，详细预约说明待补充" : "预约方式待核验，请出行前向场所确认。")}</dd></div><div><dt>费用</dt><dd>${esc$3(item.feeConfirmed === true ? item.fee || "费用已核验，详细价目待补充" : "费用待核验，原稿价格不作为当前报价。")}</dd></div></dl>`;
+	}
+	const askButton = (kind, id) => `<button class="btn wide" data-action="recommendation-ask" data-kind="${kind}" data-id="${esc$3(id)}">${icon("spark")} 带着这${kind === "route" ? "条路线" : "个地点"}问管家</button>`;
+	function recommendationRow(item, kind, snapshot, filters) {
+		return `<button class="content-row" data-action="recommendation-${kind}" data-id="${esc$3(item.id)}"><span>${identity(snapshot, item)}<strong>${esc$3(item.name)}</strong><span>${esc$3(recommendationReason(item, filters))}</span><small>${esc$3(duration(item))} · ${esc$3(item.address || "位置待补充")}</small><small>费用${item.feeConfirmed === true ? "已核验" : "待核验"} · 预约${item.bookingConfirmed === true ? "已核验" : "待核验"}</small></span>${icon("chevron")}</button>`;
+	}
+	function recommendationsMarkup(snapshot, scope, filters = {}) {
+		const selected = selectRecommendations(snapshot, scope, filters), current = selected.filters || filters;
+		const picks = selected.places.length || selected.routes.length;
+		return `<div class="page-pad recommendations-page"><h1 class="page-title">周边推荐</h1><form id="recommendation-filter" class="content-search"><label class="field">可以安排多久<select name="period">${periods.map(([id, label]) => `<option value="${id}" ${current.period === id ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="field">和谁一起去<select name="party">${parties.map(([id, label]) => `<option value="${id}" ${current.party === id ? "selected" : ""}>${label}</option>`).join("")}</select></label><button class="btn secondary wide" type="submit">看看适合的安排</button></form>${picks ? `${selected.places.length ? `<section class="content-section"><h2>精选地点</h2><div class="content-list">${selected.places.map((item) => recommendationRow(item, "place", snapshot, current)).join("")}</div></section>` : ""}${selected.routes.length ? `<section class="content-section"><h2>适合这次出行的路线</h2><div class="content-list">${selected.routes.map((item) => recommendationRow(item, "route", snapshot, current)).join("")}</div></section>` : ""}` : `<div class="empty-state"><h2>暂无已核实推荐</h2><p>${esc$3(selected.emptyReason || "当前没有符合时间与同行偏好的已确认公开资料，管家补充并发布后会显示在这里。")}</p></div>`}${libraryButton()}<p class="small muted">原稿资料保留来源与待核验说明；原稿中的价格、营业与预约线索需另行确认。</p></div>`;
+	}
+	function recommendedPlaceMarkup(id, snapshot, scope) {
+		const place = recommendedPlaceById(id, snapshot, scope);
+		if (!place) return unavailable$1();
+		const benefits = recommendationBenefits(snapshot, scope, place.id);
+		return `<div class="page-pad content-detail"><h1 class="page-title">${esc$3(place.name)}</h1>${identity(snapshot, place)}<p>${esc$3(place.description || "地点介绍待补充。")}</p>${place.parentPlaceId ? "<p class=\"notice\">此条为场所内的子空间，开放范围与使用资格以该空间说明为准。</p>" : ""}${factsMarkup(place, snapshot, scope)}${navigationMarkup(place, scope)}${benefits.length ? `<section class="content-section"><h2>相关权益说明</h2>${benefits.map((item) => `<article class="knowledge-item"><h3>${esc$3(item.name)}</h3><p>${esc$3(item.description || "使用条件请向场所确认。")}</p>${identity(snapshot, item)}<p class="small muted">来源：${esc$3(item.sourceLabel || "来源待补充")}</p></article>`).join("")}</section>` : ""}${askButton("place", place.id)}${sourceMarkup(place, snapshot)}<p class="content-disclaimer">本页只说明资料，没有发起预约或服务申请。</p></div>`;
+	}
+	function recommendedRouteMarkup(id, snapshot, scope) {
+		const route = recommendedRouteById(id, snapshot, scope);
+		if (!route) return unavailable$1();
+		const stops = route.placeIds.map((placeId) => recommendedPlaceById(placeId, snapshot, scope));
+		return `<div class="page-pad content-detail"><h1 class="page-title">${esc$3(route.name)}</h1>${identity(snapshot, route)}<p>${esc$3(route.description || "路线说明待补充。")}</p><p class="notice">此路线按自身${route.period === "half" ? "半天" : route.period === "day" ? "一天" : "已确认"}安排展示，请结合往返交通和同行体力核实。</p>${factsMarkup(route, snapshot, scope)}<section class="content-section"><h2>路线中的地点</h2><ol class="content-itinerary">${stops.map((place) => `<li><button class="content-stop" data-action="recommendation-place" data-id="${esc$3(place.id)}"><strong>${esc$3(place.name)}</strong>${icon("chevron")}</button><p>${esc$3(place.address || "地点地址待补充")} · ${esc$3(duration(place))}</p></li>`).join("")}</ol></section>${navigationMarkup(route, scope)}${askButton("route", route.id)}${sourceMarkup(route, snapshot)}<p class="content-disclaimer">路线建议不代表各站已预约；未核实的费用与开放条件仍需出行前确认。</p></div>`;
+	}
+	const localDateValue = (value) => {
+		if (!value) return "";
+		const date = new Date(value);
+		return Number.isFinite(+date) ? (/* @__PURE__ */ new Date(+date - date.getTimezoneOffset() * 6e4)).toISOString().slice(0, 16) : "";
+	};
+	const textField = (name, label, value = "", type = "text") => `<label class="field">${label}<input name="${name}" type="${type}" value="${esc$3(type === "datetime-local" ? localDateValue(value) : value)}" ${type === "number" ? "step=\"any\"" : ""}></label>`;
+	const checkField = (name, label, checked) => `<label class="field"><span><input type="checkbox" name="${name}" ${checked ? "checked" : ""}> ${label}</span></label>`;
+	function recommendationEditorMarkup(snapshot, pid, { kind = "place", id = null } = {}) {
+		if (!Object.hasOwn(kinds, kind)) kind = "place";
+		const content = experienceOf(snapshot, pid).recommendations;
+		const record = id ? content[kind === "place" ? "places" : kind === "route" ? "routes" : "benefits"].find((item) => item.id === id && item.propertyId === pid) : null;
+		if (id && !record) return "<div class=\"empty-state\"><h2>这条维护资料不存在</h2><p>请返回当前房源的推荐清单重新选择。</p></div>";
+		const r = record || {
+			enabled: true,
+			visibility: "public",
+			party: [],
+			period: "half"
+		};
+		return `<section class="recommendation-editor"><h2>精选与来源维护</h2><p class="notice">保存后成为待确认草稿；测试确认不会代表真实经营方核验，公开发布另行操作。</p>${Object.entries(kinds).map(([itemKind, label]) => {
+			return `<section class="editor-group"><h2>${label}资料</h2>${(content[itemKind === "place" ? "places" : itemKind === "route" ? "routes" : "benefits"] || []).filter((item) => item.propertyId === pid).map((item) => `<button class="fact-row" data-action="edit-recommendation" data-kind="${itemKind}" data-id="${esc$3(item.id)}"><span>${esc$3(item.name || "名称待补充")} · ${item.enabled === false ? "已停用" : item.confirmation?.status === "confirmed" ? "已确认草稿" : "待确认"}</span>${icon("chevron")}</button>`).join("")}<button class="text-btn" data-action="new-recommendation" data-kind="${itemKind}">${icon("plus")} 新增${label}</button></section>`;
+		}).join("")}<form id="recommendation-form"><input type="hidden" name="id" value="${esc$3(r.id || "")}"><label class="field">资料类型<select name="kind">${Object.entries(kinds).map(([key, label]) => `<option value="${key}" ${key === kind ? "selected" : ""}>${label}</option>`).join("")}</select></label>${textField("name", "名称", r.name)}<label class="field">介绍与适用条件<textarea name="description" maxlength="1000">${esc$3(r.description || "")}</textarea></label>${textField("address", "地点或路线位置", r.address)}${textField("lat", "已核实定位纬度（未核留空）", r.lat ?? "", "number")}${textField("lng", "已核实定位经度（未核留空）", r.lng ?? "", "number")}${textField("durationMinutes", "建议时长（分钟）", r.durationMinutes ?? "", "number")}<label class="field">适用时长<select name="period">${periods.filter(([key]) => key !== "all").map(([key, label]) => `<option value="${key}" ${key === r.period ? "selected" : ""}>${label}</option>`).join("")}</select></label><fieldset class="editor-group"><legend>适合同伴（只勾选已了解的条件）</legend>${parties.filter(([key]) => key !== "all").map(([key, label]) => `<label><input type="checkbox" name="party" value="${key}" ${(r.party || []).includes(key) ? "checked" : ""}> ${label}</label>`).join("")}</fieldset>${textField("transport", "交通说明", r.transport)}${checkField("transportConfirmed", "交通说明已逐项核验", r.transportConfirmed === true)}${textField("booking", "预约方式", r.booking)}${checkField("bookingConfirmed", "预约方式已逐项核验", r.bookingConfirmed === true)}${textField("fee", "费用及计价条件", r.fee)}${checkField("feeConfirmed", "费用及单位已逐项核验", r.feeConfirmed === true)}${textField("sourceLabel", "资料来源", r.sourceLabel)}${textField("sourceUrl", "原始来源网址（选填）", r.sourceUrl, "url")}${textField("unitId", "仅适用出租单元ID（留空为本房源）", r.unitId)}${textField("placeIds", "路线站点或权益适用地点ID（逗号分隔）", (r.placeIds || [r.placeId].filter(Boolean)).join(","))}${textField("parentPlaceId", "所属场所ID（子空间选填）", r.parentPlaceId)}<label class="field">可公开范围<select name="visibility">${[
+			["public", "公开资料"],
+			["resident", "入住专属"],
+			["internal", "内部资料"]
+		].map(([key, label]) => `<option value="${key}" ${key === r.visibility ? "selected" : ""}>${label}</option>`).join("")}</select></label>${textField("validFrom", "生效时间（选填）", r.validFrom || "", "datetime-local")}${textField("validUntil", "失效时间（选填）", r.validUntil || "", "datetime-local")}${checkField("enabled", "启用此条资料", r.enabled !== false)}${checkField("cancelled", "活动已取消／权益已取消", r.cancelled === true)}<button class="btn secondary wide" type="submit">保存推荐草稿</button></form></section>`;
+	}
+	//#endregion
+	//#region src/property-ui.mjs
+	const esc$2 = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
+		"&": "&amp;",
+		"<": "&lt;",
+		">": "&gt;",
+		"\"": "&quot;",
+		"'": "&#39;"
+	})[c]);
+	const button = (label, route) => `<button class="btn secondary" data-action="nav" data-route="${route}">${label}</button>`;
+	const field = (label, name, value = "", required = true) => `<label class="field">${label}<input name="${name}" value="${esc$2(value)}" maxlength="100" ${required ? "required" : ""}></label>`;
+	function propertyFormMarkup() {
+		return `<div class="page-pad"><h1 class="page-title">新增房源</h1><p class="notice">本阶段使用测试资料。真实房源、规则和媒体须由授权人确认，新增不会自动对客发布。</p><form id="new-property-form">${field("房源名称", "name")}${field("位置与地区", "location")}<label class="field">出租方式<select name="rentalMode"><option value="pending">待确认</option><option value="room">按间出租</option><option value="whole">整院包栋</option></select></label><label class="field">城市<select name="city"><option value="pending">地区待确认</option><option value="dali">大理</option><option value="moganshan">莫干山</option></select></label><button class="btn wide" type="submit">创建房源草稿</button></form></div>`;
+	}
+	function unitManagerMarkup(state) {
+		const d = state.draft;
+		return `<div class="page-pad"><h1 class="page-title">房间与公共空间</h1><p class="notice">${esc$2(d.name)} · 以下为草稿，保存不会改变客人端。停用与出租方式变更需确认发布后生效。</p><form id="rental-mode-form"><label class="field">出租方式<select name="rentalMode">${[
+			["pending", "待确认"],
+			["room", "按间出租"],
+			["whole", "整院包栋"]
+		].map(([k, v]) => `<option value="${k}" ${d.rentalMode === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>${field("整院建议入住人数", "wholeCapacity", d.wholeCapacity || "", false)}<button class="btn secondary wide">保存出租方式草稿</button></form><div class="section-title"><h2>卧室 · ${d.rooms.length}</h2></div>${button("新增房间", "merchant/room-edit/new")}${d.rooms.map((r) => `<article class="knowledge-item"><h3>${esc$2(r.name)} · ${r.enabled === false ? "已停用（草稿）" : "启用"}</h3><p>${esc$2(r.beds)} · ${esc$2(r.capacity)}</p>${button("编辑房间", "merchant/room-edit/" + r.id)}</article>`).join("")}${!d.rooms.length ? "<p class=\"notice\">尚未填写房间，不会自动复制示例卧室。</p>" : ""}<div class="section-title"><h2>公共空间</h2></div>${button("新增公共空间", "merchant/space-edit/new")}${(d.spaces || []).map((r) => `<article class="knowledge-item"><h3>${esc$2(r.name)} · ${r.enabled === false ? "已停用（草稿）" : "启用"}</h3>${button("编辑空间", "merchant/space-edit/" + r.id)}</article>`).join("")}<div class="section-title"><h2>检查并发布</h2></div>${button("返回民宿资料", "merchant/editor")}</div>`;
+	}
+	function roomFormMarkup(state, id) {
+		const r = id === "new" ? {
+			name: "",
+			type: "",
+			floor: "",
+			area: "",
+			beds: "",
+			capacity: "",
+			bath: "",
+			description: "",
+			facilities: []
+		} : state.draft.rooms.find((r) => r.id === id);
+		if (!r) return "<div class=\"page-pad\"><p>房间不存在，请返回重新选择。</p></div>";
+		return `<div class="page-pad"><h1 class="page-title">${id === "new" ? "新增房间" : "编辑房间"}</h1><form id="unit-room-form" data-id="${esc$2(id)}">${[
+			["name", "房间名称"],
+			["type", "房型"],
+			["floor", "所在楼层"],
+			["area", "面积"],
+			["beds", "床型"],
+			["capacity", "建议入住人数"],
+			["bath", "卫浴"]
+		].map(([k, l]) => field(l, k, r[k] || "")).join("")}${field("设施（逗号分隔）", "facilities", (r.facilities || []).join("，"), false)}<label class="field">房间介绍<textarea name="description" maxlength="500">${esc$2(r.description)}</textarea></label><label class="field">状态<select name="enabled"><option value="true" ${r.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${r.enabled === false ? "selected" : ""}>停用</option></select></label><button class="btn wide" type="submit">保存房间草稿</button></form></div>`;
+	}
+	function spaceFormMarkup(state, id) {
+		const r = id === "new" ? {} : state.draft.spaces?.find((r) => r.id === id);
+		if (!r) return "<div class=\"page-pad\">空间不存在，请返回重新选择。</div>";
+		return `<div class="page-pad"><h1 class="page-title">${id === "new" ? "新增公共空间" : "编辑公共空间"}</h1><form id="unit-space-form" data-id="${esc$2(id)}">${field("空间名称", "name", r.name || "")}<label class="field">规则分类<select name="key">${[
+			["environment", "公共环境"],
+			["kitchen", "厨房"],
+			["parking", "停车"],
+			["wifi", "网络设施"]
+		].map(([k, l]) => `<option value="${k}" ${r.key === k ? "selected" : ""}>${l}</option>`).join("")}</select></label><label class="field">空间说明<textarea name="description" maxlength="500">${esc$2(r.description)}</textarea></label><label class="field">状态<select name="enabled"><option value="true" ${r.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${r.enabled === false ? "selected" : ""}>停用</option></select></label><button class="btn wide" type="submit">保存公共空间草稿</button></form></div>`;
 	}
 	//#endregion
 	//#region src/qinghuan-content.json
@@ -5171,46 +6407,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		};
 	}
 	//#endregion
-	//#region src/icons.mjs
-	const paths = {
-		home: "<path d=\"m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z\"/><path d=\"M9 21v-8h6v8\"/>",
-		house: "<path d=\"m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8\"/><path d=\"M17 3v4\"/>",
-		panorama: "<path d=\"M3 6c6 3 12 3 18 0v12c-6-3-12-3-18 0Z\"/><path d=\"m7 14 3-3 3 3 3-2 3 3\"/><circle cx=\"16\" cy=\"9\" r=\"1\"/>",
-		chat: "<path d=\"M21 11a8 8 0 0 1-8 8H8l-5 3v-7a8 8 0 0 1 8-12h2a8 8 0 0 1 8 8Z\"/><path d=\"M8 11h.01M12 11h.01M16 11h.01\"/>",
-		bed: "<path d=\"M3 18v3m18-3v3M3 18h18V11H3ZM5 11V5h14v6M7 11V8h4v3m2 0V8h4v3\"/>",
-		arrow: "<path d=\"M4 12h16m-6-6 6 6-6 6\"/>",
-		chevron: "<path d=\"m9 5 7 7-7 7\"/>",
-		back: "<path d=\"m15 5-7 7 7 7\"/>",
-		pin: "<path d=\"M19 9c0 6-7 12-7 12S5 15 5 9a7 7 0 0 1 14 0Z\"/><circle cx=\"12\" cy=\"9\" r=\"2.4\"/>",
-		leaf: "<path d=\"M20 3C7 2 2 8 5 15c3 7 14 6 15-12ZM4 21 15 10\"/>",
-		spark: "<path d=\"m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z\"/><path d=\"m21 2 .5 1.5L23 4l-1.5.5L21 6l-.5-1.5L19 4l1.5-.5Z\"/>",
-		parking: "<rect x=\"4\" y=\"3\" width=\"16\" height=\"18\" rx=\"3\"/><path d=\"M10 17V7h3a3 3 0 0 1 0 6h-3\"/>",
-		kitchen: "<path d=\"M4 3v6a3 3 0 0 0 6 0V3M7 3v18m12 0V3c-4 0-5 8-1 9h1\"/>",
-		clock: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>",
-		check: "<path d=\"m5 12 4 4L19 6\"/>",
-		close: "<path d=\"m6 6 12 12M6 18 18 6\"/>",
-		send: "<path d=\"m12 5 7 7m-7-7-7 7m7-7v15\"/>",
-		book: "<path d=\"M12 5v16M3 3h4a5 5 0 0 1 5 2 5 5 0 0 1 5-2h4v16h-4a5 5 0 0 0-5 2 5 5 0 0 0-5-2H3Z\"/>",
-		person: "<circle cx=\"12\" cy=\"7\" r=\"4\"/><path d=\"M4 21v-2a8 8 0 0 1 16 0v2\"/>",
-		users: "<circle cx=\"9\" cy=\"7\" r=\"3\"/><path d=\"M3 21v-3a6 6 0 0 1 12 0v3m1-17a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5v2\"/>",
-		bell: "<path d=\"M5 9a7 7 0 0 1 14 0v6l2 3H3l2-3Zm5 12h4\"/>",
-		edit: "<path d=\"m14 5 5 5M4 20l5-1L21 7l-5-5L4 14Z\"/>",
-		wifi: "<path d=\"M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-10 4a5 5 0 0 1 6 0\"/><circle cx=\"12\" cy=\"20\" r=\".6\"/>",
-		shield: "<path d=\"m12 2 8 3v6c0 6-8 11-8 11S4 17 4 11V5Z\"/><path d=\"m8 11 3 3 5-6\"/>",
-		external: "<path d=\"M14 3h7v7m0-7L10 14M10 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6\"/>",
-		plus: "<path d=\"M12 5v14M5 12h14\"/>",
-		refresh: "<path d=\"M20 7v5h-5M4 17v-5h5\"/><path d=\"M5 7a8 8 0 0 1 13-2l2 7M4 12l2 7a8 8 0 0 0 13-2\"/>",
-		expand: "<path d=\"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5\"/>",
-		image: "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"m3 16 6-6 7 7 3-3 2 2\"/><circle cx=\"16\" cy=\"8\" r=\"1\"/>",
-		more: "<circle cx=\"5\" cy=\"12\" r=\"1\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/>",
-		battery: "<rect x=\"2\" y=\"6\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M23 10v4M5 9h11v6H5Z\"/>",
-		signal: "<path d=\"M4 20v-4m5 4v-8m5 8V8m5 12V4\"/>",
-		heart: "<path d=\"M20 5a5 5 0 0 0-8 1 5 5 0 0 0-8-1c-5 5 3 12 8 16 5-4 13-11 8-16Z\"/>"
-	};
-	const icon = (name, cls = "") => `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.home}</svg>`;
-	//#endregion
 	//#region src/merchant-ui.mjs
-	const esc$2 = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+	const esc$1 = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
 		"&": "&amp;",
 		"<": "&lt;",
 		">": "&gt;",
@@ -5225,8 +6423,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			guest: "客人",
 			assistant: "AI管家",
 			merchant: "民宿管家 · 人工回复"
-		}[m.role] || "咨询记录"}</strong><p class="preserve-lines">${esc$2(m.body)}</p>${m.sources?.length ? `<p class="small muted">依据：${m.sources.map((s) => esc$2(s.label) + " · V" + s.version).join("、")}</p>` : ""}</article>`).join("");
-		return `<p class="notice">${esc$2(preview.propertyName)} · ${esc$2(preview.unitName)}<br>只读回看原客人会话，不切换客人身份。</p><div class="conversation-preview">${render(selected)}${rest.length ? `<details><summary>展开原会话其他对话（${rest.length}条）</summary>${render(rest)}</details>` : ""}</div>`;
+		}[m.role] || "咨询记录"}</strong><p class="preserve-lines">${esc$1(m.body)}</p>${m.sources?.length ? `<p class="small muted">依据：${m.sources.map((s) => esc$1(s.label) + " · V" + s.version).join("、")}</p>` : ""}</article>`).join("");
+		return `<p class="notice">${esc$1(preview.propertyName)} · ${esc$1(preview.unitName)}<br>只读回看原客人会话，不切换客人身份。</p><div class="conversation-preview">${render(selected)}${rest.length ? `<details><summary>展开原会话其他对话（${rest.length}条）</summary>${render(rest)}</details>` : ""}</div>`;
 	}
 	//#endregion
 	//#region src/life-ui.mjs
@@ -5254,15 +6452,6 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	})[eventStatus(e)];
 	function activityCard(a) {
 		return `<button class="activity-card" data-action="life-event" data-event="${e$1(a.id)}"><div class="activity-date"><strong>${new Date(a.start).getDate()}</strong><span>${new Date(a.start).getMonth() + 1}月</span></div><span class="activity-copy"><span class="activity-meta">${e$1(a.category)} · ${badge(a)} · ${statusLabel(a)}</span><strong>${e$1(a.title)}</strong><small>${e$1(dateText(a.start))} · ${e$1(a.location)}</small><small>${e$1(a.price)}</small></span>${icon("chevron")}</button>`;
-	}
-	function lifeHome(life, city, filter = "all") {
-		const activities = eventsFor(life, city.id), places = city.id === "dali" ? LIFE_PLACES.filter((x) => filter === "all" || x.category === filter) : [];
-		return `<div class="life-hero"><span class="life-city">${icon("pin")} ${e$1(city.name)} · 与当前民宿同城</span><h1>住下来，<br>也去生活里走走。</h1><p>吃喝、游玩、本地活动，慢慢安排。</p><button class="life-ai-launch" data-action="nav" data-route="guest/life-chat">${icon("spark")}<span><strong>问问本地生活AI</strong><small>想吃什么、去哪玩、最近有什么活动？</small></span>${icon("arrow")}</button></div><div class="page-pad"><nav class="life-filters" aria-label="本地生活分类">${[
-			["all", "全部"],
-			["food", "吃吃喝喝"],
-			["play", "游玩体验"],
-			["events", "本地活动"]
-		].map(([k, l]) => `<button class="${filter === k ? "active" : ""}" data-action="life-filter" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join("")}</nav>${city.id !== "dali" ? "<div class=\"empty-state\"><h2>这个城市的资料还在准备</h2><p>不会把大理活动默认推荐到其他城市。<br>可在演示控制切换大理示例民宿体验。</p></div>" : ""}${filter !== "events" ? places.map((x) => `<button class="life-place" data-action="life-place" data-place="${x.id}"><span class="life-place-icon">${icon(x.icon)}</span><span><small>${e$1(x.title)}</small><strong>${e$1(x.name)}</strong><p>${e$1(x.location)}</p></span>${icon("chevron")}</button>`).join("") : ""}${["all", "events"].includes(filter) ? `<div class="section-title"><h2>这几天的本地活动</h2><span class="tag">${activities.length}条可用</span></div>${activities.length ? activities.map(activityCard).join("") : "<p class=\"notice\">暂无可用活动。过期或取消的活动不会继续推荐。</p>"}` : ""}<p class="life-source-note">本页内容用于原型演示，尚未连接真实推荐或小程序活动源。<br>示例资料更新：${e$1(dateText(life.syncedAt))}</p></div>`;
 	}
 	function lifeChat(life, city, messages, scope = {}) {
 		const qinghuan = !!contentFor(scope.propertyId, scope.cityId);
@@ -5408,527 +6597,6 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return `<div class="composer-context content-context"><span>${icon("pin")} 正在问：${e(current.label)}</span><button type="button" data-action="clear-life-context" aria-label="移除本地生活对象">${icon("close")}</button></div>`;
 	}
 	//#endregion
-	//#region src/qinghuan-service.json
-	var notice = "内部资料预览，全部建议待店方确认。原表中的时效、赔付额度、巡检、自动推送与派单均为策划候选，不代表已开通、已授权或已执行。责任岗位与整改优先级来自原表，未形成真实派工或整改任务。";
-	//#endregion
-	//#region src/service-ui.mjs
-	const serviceKnowledge = [
-		{
-			"id": "Q01",
-			"phase": "入住前",
-			"question": "从机场/高铁站怎么到院子？能安排接站吗？",
-			"internalActionSummary": "原表策划建议：到店前自动推送「一码通」电子指南：导航一键启动、3条到店路线图文、接站报价表、24h紧急电话；拼车排期表共享文档降本",
-			"roleCandidate": "管家",
-			"priority": "P0",
-			"confirmationChecklist": "机场/车站与本店的准确定位、推荐交通、参考车程及有效日期；是否提供接站、费用口径、预约与承接人、服务时段。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A4:O4"
-			}
-		},
-		{
-			"id": "Q02",
-			"phase": "入住前",
-			"question": "小区楼栋多、路复杂，到了怎么找到房间？",
-			"internalActionSummary": "原表策划建议：「找房三件套」：从214国道入口拍到房门的实景路书视频 + 入住日玄关/楼栋提前亮灯 + 密码与地图双通道；管家不再电话远程指路",
-			"roleCandidate": "管家",
-			"priority": "P0",
-			"confirmationChecklist": "本店/出租单元对应的小区入口、楼栋/门牌、白天和夜间路书、可用导航点、门禁获取方式及迷路联系入口。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A5:O5"
-			}
-		},
-		{
-			"id": "Q03",
-			"phase": "入住前",
-			"question": "自驾好停车吗？收费吗？有充电桩吗？",
-			"internalActionSummary": "原表策划建议：平台标签前置「免费停车/代客泊车」+ 停车实拍图入电子指南；充电需求提前登记排期，避免到店后协调",
-			"roleCandidate": "管家",
-			"priority": "P1",
-			"confirmationChecklist": "本店可使用的停车场、收费/免费适用范围、入场规则、是否代客泊车；充电设施是否真实存在、位置及预约方式。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A6:O6"
-			}
-		},
-		{
-			"id": "Q04",
-			"phase": "入住前",
-			"question": "能提前入住或延迟退房吗？",
-			"internalActionSummary": "原表策划建议：房态共享日历自助查「可早入/可晚退」时段；行李寄存牌流程化，管家只处理例外",
-			"roleCandidate": "管家/保洁",
-			"priority": "P1",
-			"confirmationChecklist": "本店标准入住/退房时刻、早到/晚退条件与费用、行李寄存规则、房态及保洁的实际确认渠道。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A7:O7"
-			}
-		},
-		{
-			"id": "Q05",
-			"phase": "入住前",
-			"question": "除房费外还有押金、清洁费吗？退改规则是什么？",
-			"internalActionSummary": "原表策划建议：「费用一页纸」随确认短信自动下发；下单前弹窗列明全部收费项，把争议消灭在成交前",
-			"roleCandidate": "运营/管家",
-			"priority": "P0",
-			"confirmationChecklist": "房费之外实际存在的押金、清洁费、超时费、收费条件；订单渠道对应的退改条款、退款路径与时效。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A8:O8"
-			}
-		},
-		{
-			"id": "Q06",
-			"phase": "入住前",
-			"question": "能带宠物吗？有什么要求？",
-			"internalActionSummary": "原表策划建议：预订页宠物标签化；宠物入住包（尿垫/湿巾/食盆）标准化配置，押金规则写进确认函",
-			"roleCandidate": "管家/保洁",
-			"priority": "P2",
-			"confirmationChecklist": "清欢是否接待宠物、允许的品种/体型/数量、适用房源、押金/清洁费、行为要求及需提前确认的条件。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A9:O9"
-			}
-		},
-		{
-			"id": "Q07",
-			"phase": "入住前",
-			"question": "含早餐吗？可以自己做饭吗？",
-			"internalActionSummary": "原表策划建议：早餐「一码通」订餐；厨房时段预约制+清洁checklist，杜绝共享设施冲突",
-			"roleCandidate": "管家/餐饮",
-			"priority": "P1",
-			"confirmationChecklist": "是否含早及适用订单、早餐供应者/地点/时段/价格；本店厨房是否可用、设施用品、预约与清洁责任。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A10:O10"
-			}
-		},
-		{
-			"id": "Q08",
-			"phase": "入住前",
-			"question": "房间图片和实际一致吗？会不会照骗？",
-			"internalActionSummary": "原表策划建议：实拍视频替代精修图上架；主动披露短板文案；承诺入住30分钟无理由换房",
-			"roleCandidate": "运营",
-			"priority": "P0",
-			"confirmationChecklist": "每个房型/出租单元的实际图文/VR对应关系、拍摄日期、景观与楼层、已知短板；是否有换房政策及执行条件。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A11:O11"
-			}
-		},
-		{
-			"id": "Q09",
-			"phase": "入住前",
-			"question": "有空调/取暖吗？雨季潮不潮、冬天冷不冷？",
-			"internalActionSummary": "原表策划建议：电子指南按季节自动推送「当季舒适提示」；潮湿楼层标配除湿设备，预期前置管理",
-			"roleCandidate": "管家",
-			"priority": "P1",
-			"confirmationChecklist": "各出租单元实际空调、取暖/除湿设备及使用方法；楼层季节性情况、可借物品与服务时段。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A12:O12"
-			}
-		},
-		{
-			"id": "Q10",
-			"phase": "入住前",
-			"question": "能开发票吗？怎么开？",
-			"internalActionSummary": "原表策划建议：退房时扫码自助填开票信息，系统自动开具并推送，零人工介入",
-			"roleCandidate": "运营/财务",
-			"priority": "P2",
-			"confirmationChecklist": "本店是否可开及由谁开、可开项目/金额、申请信息、申请入口、渠道限制与承诺时效。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A13:O13"
-			}
-		},
-		{
-			"id": "Q11",
-			"phase": "入住中",
-			"question": "突然停水停电怎么办？找谁？多久能修？",
-			"internalActionSummary": "原表策划建议：应急SOP卡片（停水/停电/漏水三张）；入住日水电预检拍照；常备桶装水应急包，把突发变有准备",
-			"roleCandidate": "管家/维修",
-			"priority": "P0",
-			"confirmationChecklist": "停水/停电/漏水的实际应急流程、当班/维修/物业渠道、可提供的替代安排、通知方式与补偿授权。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A14:O14"
-			}
-		},
-		{
-			"id": "Q12",
-			"phase": "入住中",
-			"question": "热水出水慢、忽冷忽热怎么解决？",
-			"internalActionSummary": "原表策划建议：硬件改造：增压花洒/热水循环/水温标定；房间贴「热水使用提示卡」；报修工单直达维修，管家只跟进结果",
-			"roleCandidate": "管家/维修",
-			"priority": "P0",
-			"confirmationChecklist": "本房热水设备类型、开关及等待/温度提示、可用说明图、故障判断、报修渠道和实际响应规则。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A15:O15"
-			}
-		},
-		{
-			"id": "Q13",
-			"phase": "入住中",
-			"question": "WiFi连不上/网速慢怎么办？",
-			"internalActionSummary": "原表策划建议：全屋Mesh组网改造；密码做成桌卡+一码通双通道；指南内标注实测网速管理预期",
-			"roleCandidate": "管家/维修",
-			"priority": "P1",
-			"confirmationChecklist": "各单元网络覆盖、设备可执行的排查步骤、故障联系人；WiFi凭据的授权获取入口及可见范围。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A16:O16"
-			}
-		},
-		{
-			"id": "Q14",
-			"phase": "入住中",
-			"question": "房间有蜘蛛、蚊虫怎么办？",
-			"internalActionSummary": "原表策划建议：入住前「虫害预防三件套」（蚊香液/电蚊拍/纱窗检查）；庭院定期驱蚊喷洒排期表；床品深度清洁SOP",
-			"roleCandidate": "管家/保洁",
-			"priority": "P1",
-			"confirmationChecklist": "本店防虫物资及位置、可提供的清洁/除虫处理、联系时段、换房或补偿的批准条件。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A17:O17"
-			}
-		},
-		{
-			"id": "Q15",
-			"phase": "入住中",
-			"question": "卫生没打扫、垃圾没人倒怎么办？",
-			"internalActionSummary": "原表策划建议：连住客人「打扫日历」扫码自助预约；保洁拍照打卡制；垃圾不超2/3巡检制（每日3次）",
-			"roleCandidate": "保洁/管家",
-			"priority": "P0",
-			"confirmationChecklist": "一客一扫或连住打扫政策、免费/收费范围、预约提前量、保洁时段、垃圾清运与补扫渠道。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A18:O18"
-			}
-		},
-		{
-			"id": "Q16",
-			"phase": "入住中",
-			"question": "晚上小区路灯暗、独自回家安全吗？",
-			"internalActionSummary": "原表策划建议：向物业提交照明盲区清单推动整改；管家夜间动线亮灯试点；指南内置安全提示+保安室电话",
-			"roleCandidate": "管家/物业联动",
-			"priority": "P1",
-			"confirmationChecklist": "真实可走夜间路线、照明情况、安全联系/物业渠道、值班时段，是否能陪同或借手电。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A19:O19"
-			}
-		},
-		{
-			"id": "Q17",
-			"phase": "入住中",
-			"question": "共享厨房/洗衣机被其他客人占用怎么办？",
-			"internalActionSummary": "原表策划建议：共享设施扫码预约排期表（时段可视化）；短租客优先原则；逐步一房一机配置",
-			"roleCandidate": "管家",
-			"priority": "P1",
-			"confirmationChecklist": "哪些设施实际共享、适用住客、可用时段、预约/排队方法、冲突处理与替代方案。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A20:O20"
-			}
-		},
-		{
-			"id": "Q18",
-			"phase": "入住中",
-			"question": "隔音怎么样？小区晚上吵吗？",
-			"internalActionSummary": "原表策划建议：耳塞入「安心包」；房源文案如实标注；小区活动提前一天群预告",
-			"roleCandidate": "管家",
-			"priority": "P2",
-			"confirmationChecklist": "各房型隔音/临街/活动影响的如实说明、安静时段、耳塞是否可提供、噪音投诉渠道。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A21:O21"
-			}
-		},
-		{
-			"id": "Q19",
-			"phase": "入住中",
-			"question": "周边怎么玩？有本地攻略和推荐吗？",
-			"internalActionSummary": "原表策划建议：「南区电子攻略」一码通：3条一日游路线+餐厅红灰榜+交通卡；AI客服基于知识库秒答延伸问题",
-			"roleCandidate": "管家",
-			"priority": "P1",
-			"confirmationChecklist": "先整合攻略66条及主题新增点位的有效资料；本店可否代订、收费与联系方法；客人当次偏好、人数及可用时间。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A22:O22"
-			}
-		},
-		{
-			"id": "Q20",
-			"phase": "入住中",
-			"question": "衣服怎么洗？有烘干吗？",
-			"internalActionSummary": "原表策划建议：扫码解锁洗衣房+烘干排期；连住客人洗衣指南一页纸",
-			"roleCandidate": "保洁/管家",
-			"priority": "P2",
-			"confirmationChecklist": "本房/公共洗衣设施的位置、可用机型、洗涤用品、使用/收费规则；烘干是否存在、时段与雨天处理办法。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A23:O23"
-			}
-		},
-		{
-			"id": "Q21",
-			"phase": "退房后",
-			"question": "押金什么时候退？怎么退？",
-			"internalActionSummary": "原表策划建议：承诺写入确认函；系统自动退款触发；损坏争议以入住时房间视频留证裁定",
-			"roleCandidate": "运营/财务",
-			"priority": "P0",
-			"confirmationChecklist": "是否收押金、金额/支付渠道、查房流程、原路退回条件、到账时效、查询与争议入口。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A24:O24"
-			}
-		},
-		{
-			"id": "Q22",
-			"phase": "退房后",
-			"question": "退房超时了怎么收费？能延到下午吗？",
-			"internalActionSummary": "原表策划建议：退房前1天自动推送「弹性退房」自助申请（对接次日房态）；行李寄存兜底",
-			"roleCandidate": "管家",
-			"priority": "P1",
-			"confirmationChecklist": "各渠道/房型超时收费、阶梯边界、宽限条件、晚退申请截止时间、实际房态确认和寄存替代。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A25:O25"
-			}
-		},
-		{
-			"id": "Q23",
-			"phase": "退房后",
-			"question": "东西落在房间怎么办？能寄回吗？",
-			"internalActionSummary": "原表策划建议：遗留物检查清单卡+拍照模板；快递合作月结价；客人扫码登记申领，全程零电话",
-			"roleCandidate": "保洁/管家",
-			"priority": "P1",
-			"confirmationChecklist": "遗留物联系/登记入口、查找范围与时段、认领核验方式、保管期限、邮寄费用与快递处理规则。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A26:O26"
-			}
-		},
-		{
-			"id": "Q24",
-			"phase": "退房后",
-			"question": "厨房没清理/房间弄脏会被扣费吗？标准是什么？",
-			"internalActionSummary": "原表策划建议：「深度清洁费价目表」入确认函；入住时房间状态照片作基线；争议以照片比对裁定",
-			"roleCandidate": "管家/保洁",
-			"priority": "P1",
-			"confirmationChecklist": "本店深度清洁费的适用情形/价目、正常使用界限、事前告知与争议处理方式、证据保管规则。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A27:O27"
-			}
-		},
-		{
-			"id": "Q25",
-			"phase": "退房后",
-			"question": "发票多久开出来？开错了怎么办？",
-			"internalActionSummary": "原表策划建议：自助开票小程序+重开工单24小时响应闭环",
-			"roleCandidate": "运营/财务",
-			"priority": "P2",
-			"confirmationChecklist": "实际开票时效、进度查询、错误更正/重开流程、是否收费、办理主体与承接渠道。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A28:O28"
-			}
-		},
-		{
-			"id": "Q26",
-			"phase": "退房后",
-			"question": "退房后能帮忙叫车/送站吗？",
-			"internalActionSummary": "原表策划建议：退房前1天问约车；拼车排期表摊薄成本；与固定司机长期合作价",
-			"roleCandidate": "管家",
-			"priority": "P2",
-			"confirmationChecklist": "是否提供送站、实际合作司机/联系归口、费用与预约规则、拼车条件、服务时段及人数/行李限制。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A29:O29"
-			}
-		},
-		{
-			"id": "Q27",
-			"phase": "退房后",
-			"question": "对服务不满意找谁？有补偿吗？",
-			"internalActionSummary": "原表策划建议：差评24小时黄金响应SOP；补偿额度授权管家现场决断（如50元内）；月度客诉复盘会",
-			"roleCandidate": "管家/主理人",
-			"priority": "P0",
-			"confirmationChecklist": "投诉受理渠道、当班/升级责任、可确认的响应时效、补偿权限与记录方式。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A30:O30"
-			}
-		},
-		{
-			"id": "Q28",
-			"phase": "退房后",
-			"question": "下次来有老客优惠吗？怎么订？",
-			"internalActionSummary": "原表策划建议：离店24小时自动感谢消息+再访优惠券；会员群运营；手机号为键的客户档案（一码通）",
-			"roleCandidate": "运营/管家",
-			"priority": "P1",
-			"confirmationChecklist": "是否确有老客权益、折扣/升房/礼品具体规则、有效期、适用房源/渠道、核验和预订入口。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A31:O31"
-			}
-		},
-		{
-			"id": "Q29",
-			"phase": "退房后",
-			"question": "设施损坏被要求赔偿怎么界定？",
-			"internalActionSummary": "原表策划建议：入住时引导「3分钟房间视频」自助留证；物品损坏价目表公示；双向保护减少扯皮",
-			"roleCandidate": "管家",
-			"priority": "P1",
-			"confirmationChecklist": "本店损坏判定与正常损耗界限、已公示价目、入住状态留证方式、复核/争议渠道及授权人。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A32:O32"
-			}
-		},
-		{
-			"id": "Q30",
-			"phase": "退房后",
-			"question": "退房后有问题还能找到管家吗？",
-			"internalActionSummary": "原表策划建议：离店后自动推送「售后卡」（电话+微信+常见问题链接）；夜间咨询AI客服托管",
-			"roleCandidate": "管家/运营",
-			"priority": "P1",
-			"confirmationChecklist": "实际售后电话/微信或页面入口、服务时段、夜间和紧急情况的真实承接渠道、问题分级与交接方式。",
-			"status": "pending_confirmation",
-			"sourceRef": {
-				"file": "大理小院子南区民宿管家服务30问.xlsx",
-				"location": "30问总表!A33:O33"
-			}
-		}
-	];
-	const esc$1 = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
-		"&": "&amp;",
-		"<": "&lt;",
-		">": "&gt;",
-		"\"": "&quot;",
-		"'": "&#39;"
-	})[char]);
-	const phases = [
-		"入住前",
-		"入住中",
-		"退房后"
-	];
-	const isGuideId = (id) => /^Q(?:0[1-9]|[12]\d|30)$/.test(id ?? "");
-	const publicGuides = (knowledge) => (Array.isArray(knowledge) ? knowledge : []).filter((item) => item?.kind === "confirmation_guide" && isGuideId(item.id));
-	const findPublicGuide = (knowledge, id) => publicGuides(knowledge).find((item) => item.id === id);
-	const publicMissing = {
-		Q01: "准确导航点、交通参考、接站是否提供及费用、预约方式和服务时段。",
-		Q02: "对应出租单元的入口、楼栋门牌、日夜路书与核验入住身份后的门禁获取方式。",
-		Q03: "可用停车位置、收费和入场规则；充电设施是否存在、当日可用情况及预约方式。",
-		Q04: "标准入住退房时间、早入晚退条件和费用、行李寄存规则及当日房态。",
-		Q05: "订单所列费用、押金和清洁费是否另收、退改条款与订单查询入口。",
-		Q06: "是否接待宠物、适用单元、种类体型数量限制、费用与行为要求。",
-		Q07: "是否含早、适用订单、供应地点时段和价格；厨房是否可用及使用清洁要求。",
-		Q08: "本单元实拍或VR对应关系、拍摄日期、景观楼层及已知限制。",
-		Q09: "本单元空调、取暖和除湿设备、实际使用说明及可借物品。",
-		Q10: "能否开票、办理主体、项目金额、申请资料和入口。",
-		Q11: "故障情况的联系入口、可提供的替代安排及后续通知方式。",
-		Q12: "本房热水设备说明、安全使用提示与报修联系入口。",
-		Q13: "本单元网络覆盖、授权WiFi凭据获取入口与可执行的排查说明。",
-		Q14: "可用防虫用品、清洁或除虫处理的联系入口和适用条件。",
-		Q15: "连住打扫政策、预约方式、可用时段和收费范围。",
-		Q16: "可走夜间路线、照明情况、物业或安全联系入口及可借物品。",
-		Q17: "实际共享设施、适用住客、可用时段、预约排队方法与替代方案。",
-		Q18: "本单元隔音和临街情况、安静时段、可借用品及噪音联系入口。",
-		Q19: "攻略地点的有效信息、可用时间与出行偏好；能否代订、费用和联系方法。",
-		Q20: "实际洗衣和烘干设施、位置、时段、用品与收费规则。",
-		Q21: "是否收取押金、原支付渠道、退回条件、到账时间和查询入口。",
-		Q22: "超时费用、宽限条件、晚退申请方式和当日房态；行李寄存替代方案。",
-		Q23: "遗留物联系和登记入口、认领核验、保管期限及邮寄费用规则。",
-		Q24: "已告知的清洁费适用条件、正常使用界限、价目与争议查询入口。",
-		Q25: "实际开票时效、进度查询、更正重开方式与办理入口。",
-		Q26: "是否提供送站、实际费用、预约方式、服务时段及人数行李限制。",
-		Q27: "投诉受理入口、服务时段与个案后续答复方式。",
-		Q28: "是否确有老客权益、具体规则、有效期、适用房源和预订入口。",
-		Q29: "正常损耗与损坏的区分、事前公示规则、复核和争议查询入口。",
-		Q30: "可核实的售后联系入口、服务时段及夜间紧急联系获取方式。"
-	};
-	function sourceMarkup(sourceRef) {
-		return `<p class="small muted service-source">来源：${esc$1(sourceRef?.file)} · ${esc$1(sourceRef?.location)}</p>`;
-	}
-	function publicSourceMarkup(guide) {
-		return `<p class="small muted service-source">来源：${esc$1(guide.sourceLabel || `清欢30问 · ${guide.id}`)} · ${esc$1(guide.sourceRange || "来源位置待补充")}</p>`;
-	}
-	function merchantCard(item, knowledge, expanded = false) {
-		const guide = findPublicGuide(knowledge, item.id);
-		const title = guide?.question || item.question;
-		const confirmed = guide?.requiresHuman === false;
-		const content = `<p class="tag service-status">${confirmed ? "公开答复已确认；内部建议仍待店方确认" : "待店方确认"}</p>
-    <div class="fact-row service-checklist"><span>确认清单</span><p>${esc$1(guide?.confirmationChecklist || item.confirmationChecklist)}</p></div>
-    ${guide?.text ? `<div class="fact-row service-public-answer"><span>${confirmed ? "当前已确认公开答复" : "当前公开接待指引"}</span><p>${esc$1(guide.text)}</p></div>` : "<p class=\"small muted\">当前公开问答中无此条目；请先核对对客口径。</p>"}
-    <div class="fact-row service-internal-action"><span>内部动作建议</span><p>${esc$1(item.internalActionSummary)}</p></div>
-    <div class="fact-row"><span>责任岗位候选</span><p>${esc$1(item.roleCandidate)}</p></div>
-    <div class="fact-row"><span>整改优先级</span><p>${esc$1(item.priority)} · 原表建议，尚未形成整改任务</p></div>
-    ${sourceMarkup(item.sourceRef)}`;
-		const heading = `<span class="service-question-id">${esc$1(item.id)}</span> ${esc$1(title)}`;
-		return expanded ? `<article class="knowledge-item service-card" data-service-id="${esc$1(item.id)}"><h3>${heading}</h3>${content}</article>` : `<details class="knowledge-item service-card" data-service-id="${esc$1(item.id)}"><summary>${heading}</summary>${content}</details>`;
-	}
-	function serviceDeskMarkup(propertyId, knowledge) {
-		if (propertyId !== "qinghuan-dali") return "";
-		return `<section class="service-desk"><p class="notice service-notice">${esc$1(notice)}</p>${phases.map((phase) => {
-			const items = serviceKnowledge.filter((item) => item.phase === phase);
-			return `<section class="editor-group service-phase"><h2>${esc$1(phase)} · ${items.length}问</h2>${items.map((item) => merchantCard(item, knowledge)).join("")}</section>`;
-		}).join("")}</section>`;
-	}
-	function ticketServiceMarkup(propertyId, ticket, knowledge) {
-		if (propertyId !== "qinghuan-dali") return "";
-		const ids = new Set(Array.isArray(ticket?.knowledgeIds) ? ticket.knowledgeIds : []);
-		const items = serviceKnowledge.filter((item) => ids.has(item.id));
-		if (!items.length) return "";
-		return `<section class="service-ticket"><h2>本次咨询的内部处置参考</h2><p class="notice service-notice">${esc$1(notice)}</p>${items.map((item) => merchantCard(item, knowledge, true)).join("")}</section>`;
-	}
-	function guestHandbookMarkup(propertyId, knowledge) {
-		if (propertyId !== "qinghuan-dali") return "";
-		const guides = [...new Map(publicGuides(knowledge).map((guide) => [guide.id, guide])).values()].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
-		if (!guides.length) return "<section class=\"service-handbook\"><p class=\"notice\">暂无公开服务指引，请通过订单平台已有的商家联系入口确认。</p></section>";
-		return `<section class="service-handbook"><p class="notice service-notice">按入住阶段查找问题。待商家确认的内容不作为本店已提供服务的承诺；联系方式请从订单平台已有的商家联系入口获取。</p>${phases.map((phase) => {
-			const items = guides.filter((guide) => guide.phase === phase);
-			if (!items.length) return "";
-			return `<section class="editor-group service-phase"><h2>${esc$1(phase)} · ${items.length}问</h2>${items.map((guide) => {
-				const confirmed = guide.requiresHuman === false;
-				return `<details class="knowledge-item service-guide"><summary><span class="service-question-id">${esc$1(guide.id)}</span> ${esc$1(guide.question)}</summary><p class="tag service-status">${confirmed ? "已确认公开答复" : "待商家确认"}</p><p class="service-public-answer">${esc$1(guide.text)}</p>${confirmed ? "" : `<p class="small service-missing"><strong>待补充：</strong>${esc$1(publicMissing[guide.id])}</p>`}${publicSourceMarkup(guide)}<button class="text-btn service-ask" data-action="select-guide" data-knowledge="${esc$1(guide.id)}">就这个问题咨询</button></details>`;
-			}).join("")}</section>`;
-		}).join("")}</section>`;
-	}
-	//#endregion
 	//#region src/app.mjs
 	const STORAGE = "minsu-mini-v040";
 	const LEGACY_STORAGE = "minsu-mini-v030";
@@ -5963,13 +6631,20 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	let lastRoute = "";
 	let dialogAction = null;
 	let returnFocus = null;
-	let lifeFilter = "all";
 	let lifeDraft = "";
 	let lifeContext = null;
 	let contentTab = "places";
 	let contentCategory = "all";
 	let contentQuery = "";
 	let contentLimit = 16;
+	let recommendationFilters = {
+		period: "all",
+		party: "all"
+	};
+	let recommendationEdit = {
+		kind: "place",
+		id: null
+	};
 	const customerPreview = new URLSearchParams(location.search).get("share") === "1";
 	const mobilePresentation = () => isMobilePresentation(location.search, window.innerWidth);
 	function fitViewport() {
@@ -6033,9 +6708,17 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	const currentCity = () => currentEntry().city;
 	const lifeScope = () => ({
 		propertyId: activePropertyId,
+		unitId: target.unitId || null,
 		cityId: currentCity().id,
 		cityName: currentCity().name
 	});
+	function validLifeObject(context) {
+		return context?.collection === "recommendations" ? recommendationContext(context.kind, context.id, state.published, lifeScope()) : validContentContext(context, lifeScope());
+	}
+	function lifeContextMarkup() {
+		const c = validLifeObject(lifeContext);
+		return c?.collection === "recommendations" ? `<div class="composer-context"><span>正在问：${esc(c.label)}</span><button type="button" data-action="clear-life-context" aria-label="移除本地生活对象">移除</button></div>` : contentContextChip(lifeContext, lifeScope());
+	}
 	function saveLifeDraft() {
 		try {
 			sessionStorage.setItem(lifeDraftKey(), lifeDraft);
@@ -6044,7 +6727,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	function goLifeChat(body = "", context = null) {
 		lifeDraft = body;
-		lifeContext = validContentContext(context, lifeScope());
+		lifeContext = validLifeObject(context);
 		saveLifeDraft();
 		go("guest/life-chat");
 	}
@@ -6525,8 +7208,22 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 				back = "guest/life";
 			}
 			if (p === "handbook") {
-				title = "入住服务手册";
+				title = "入住指南";
 				back = "guest/home";
+			}
+		}
+		if (r === "guest") {
+			if (p === "arrival") {
+				title = "如何到店";
+				back = "guest/handbook";
+			}
+			if (p === "life-library") {
+				title = "完整资料预览";
+				back = "guest/life";
+			}
+			if (p === "recommended-place" || p === "recommended-route") {
+				title = p === "recommended-place" ? "精选地点" : "推荐路线";
+				back = "guest/life";
 			}
 		}
 		return {
@@ -6552,7 +7249,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		lastRoute = location.hash;
 		document.body.classList.toggle("customer-preview", customerPreview);
 		document.body.classList.toggle("mobile-presentation", mobilePresentation());
-		$("#app").innerHTML = `<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTciIGZpbGw9IiMyNDRmNDAiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmNmY2ZWUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTMgMzEgMzIgMTVsMTkgMTZNMTkgMjh2MjJoMjZWMjhNMjggNTBWMzZoOHYxNCIvPjxwYXRoIGQ9Ik00MiAxNnY3Ii8+PC9nPjwvc3ZnPgo=" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.4.3</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon("house")} 小程序风格演示 <strong>· ${r === "guest" ? "客人端" : r === "merchant" ? "商家端" : "平台端"}</strong></span><span>${mobileOpen ? "收起讲解" : "演示控制"} ${icon(mobileOpen ? "close" : "more")}</span></button><main class="workspace">${mobilePresentation() ? "" : narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${target.ok || r !== "guest" ? esc(state.published.name) : "看房链接失效"} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon("signal")}${icon("wifi")}${icon("battery")}</span></div><header class="mini-header"><div class="mini-title">${info.back ? `<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon("back")}</button>` : ""}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation() && !customerPreview ? "演示入口与说明" : "小程序演示说明"}">${icon("more")}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError ? `<div class="error-banner">${esc(storageError)}</div>` : ""}${localChat ? lifeChat(workspace.life, currentCity(), lifeMessages(), lifeScope()) : chat ? renderChat() : `<div class="phone-body ${p === "vr" && r === "guest" ? "vr-body" : ""}" id="phone-scroll">${content()}</div>`}${noTabs ? "" : tabbar()}${localChat ? lifeComposer(lifeDraft, contentContextChip(lifeContext, lifeScope())) : chat ? composerView() : r === "merchant" && p === "editor" ? editorActions() : ""}${r === "guest" && ["room", "space"].includes(p) ? detailActions() : ""}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
+		$("#app").innerHTML = `<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTciIGZpbGw9IiMyNDRmNDAiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmNmY2ZWUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTMgMzEgMzIgMTVsMTkgMTZNMTkgMjh2MjJoMjZWMjhNMjggNTBWMzZoOHYxNCIvPjxwYXRoIGQ9Ik00MiAxNnY3Ii8+PC9nPjwvc3ZnPgo=" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.4.3</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon("house")} 小程序风格演示 <strong>· ${r === "guest" ? "客人端" : r === "merchant" ? "商家端" : "平台端"}</strong></span><span>${mobileOpen ? "收起讲解" : "演示控制"} ${icon(mobileOpen ? "close" : "more")}</span></button><main class="workspace">${mobilePresentation() ? "" : narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${target.ok || r !== "guest" ? esc(state.published.name) : "看房链接失效"} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon("signal")}${icon("wifi")}${icon("battery")}</span></div><header class="mini-header"><div class="mini-title">${info.back ? `<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon("back")}</button>` : ""}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation() && !customerPreview ? "演示入口与说明" : "小程序演示说明"}">${icon("more")}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError ? `<div class="error-banner">${esc(storageError)}</div>` : ""}${localChat ? lifeChat(workspace.life, currentCity(), lifeMessages(), lifeScope()) : chat ? renderChat() : `<div class="phone-body ${p === "vr" && r === "guest" ? "vr-body" : ""}" id="phone-scroll">${content()}</div>`}${noTabs ? "" : tabbar()}${localChat ? lifeComposer(lifeDraft, lifeContextMarkup()) : chat ? composerView() : r === "merchant" && p === "editor" ? editorActions() : ""}${r === "guest" && ["room", "space"].includes(p) ? detailActions() : ""}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
 		if (chat || localChat) {
 			const c = $(".chat-scroll");
 			if (c) c.scrollTop = c.scrollHeight;
@@ -6572,18 +7269,21 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		if (r === "guest") {
 			if (!target.ok) return `<div class="page-pad"><div class="empty-state">${icon("house")}<h1 class="page-title">看房链接暂不可用</h1><p>${esc(target.message)}</p></div></div>`;
 			if (!state.visible) return `<div class="page-pad"><div class="empty-state">${icon("house")}<h2>民宿资料暂时停止展示</h2><p>请联系民宿管家确认。恢复展示后可继续看房和咨询。</p></div>${btn("查看已有咨询", "switch-chat", "secondary wide")}</div>`;
-			if (p === "life") return contentHome(lifeScope(), {
+			if (p === "life") return recommendationsMarkup(state.published, lifeScope(), recommendationFilters);
+			if (p === "recommended-place") return recommendedPlaceMarkup(parts()[2], state.published, lifeScope());
+			if (p === "recommended-route") return recommendedRouteMarkup(parts()[2], state.published, lifeScope());
+			if (p === "life-library") return contentHome(lifeScope(), {
 				tab: contentTab,
 				category: contentCategory,
 				query: contentQuery,
 				limit: contentLimit,
 				eventsMarkup: eventsPreviewMarkup(workspace.life, currentCity())
-			}) ?? lifeHome(workspace.life, currentCity(), lifeFilter);
+			}) || "<div class=\"page-pad\"><h1 class=\"page-title\">本房源暂无原稿资料库</h1><p class=\"notice\">未将其他房源的专属资料混入本店。可从演示商家选择清欢资料预览，查看已有85条资料与5条主题路线。</p></div>";
 			if (p === "life-place") return placeContent(parts()[2], lifeScope());
 			if (p === "life-route") return routeContent(parts()[2], lifeScope());
 			if (p === "life-lead") return leadContent(parts()[2], lifeScope());
-			if (p === "handbook") return `<div class="page-pad"><h1 class="page-title">入住服务手册</h1>${guestHandbookMarkup(activePropertyId, state.published.knowledge) || "<p class=\"notice\">本房源暂无阶段服务手册，可从AI管家继续咨询。</p>"}</div>`;
-			if (p === "arrival") return "<div class=\"page-pad\"><h1 class=\"page-title\">如何到店</h1><p class=\"notice\">到店入口、停车点及路线待确认，请通过订单平台已有商家入口联系管家。</p></div>";
+			if (p === "handbook") return `<div class="page-pad">${handbookMarkup(activePropertyId, state.published)}</div>`;
+			if (p === "arrival") return `<div class="page-pad">${arrivalMarkup(state.published, activePropertyId, target.unitId || null)}</div>`;
 			if (p === "home") return home();
 			if (p === "rooms") return rooms();
 			if (p === "room") return roomDetail();
@@ -6591,6 +7291,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			if (p === "vr") return vr();
 		}
 		if (r === "merchant") {
+			if (p === "guide-editor") return `<div class="page-pad">${guideEditorMarkup(state, activePropertyId)}</div>`;
+			if (p === "recommendations") return recommendationEditorMarkup(state.draft, activePropertyId, recommendationEdit);
 			if (p === "new-property") return propertyFormMarkup();
 			if (p === "units") return unitManagerMarkup(state);
 			if (p === "room-edit") return roomFormMarkup(state, parts()[2]);
@@ -6753,11 +7455,11 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	function message(m, t) {
 		const ticket = Object.values(state.tickets).find((x) => x.messageId === m.id), human = m.role === "merchant", guest = m.role === "guest";
-		const context = m.context?.roomId ? state.published.rooms.find((r) => r.id === m.context.roomId)?.name : m.context?.spaceName;
+		const context = m.context?.label || (m.context?.roomId ? state.published.rooms.find((r) => r.id === m.context.roomId)?.name : m.context?.spaceName);
 		return `<article class="message ${m.role}">${guest ? "" : `<span class="message-avatar">${icon(human ? "person" : "spark")}</span>`}<div class="message-content">${guest ? "" : `<p class="message-name">${human ? "民宿管家 · 人工回复" : "AI小院管家"}</p>`}<div class="message-bubble">${context ? `<span class="message-context">关于 ${esc(context)}</span>` : ""}${esc(m.body)}</div>${m.sources?.length ? `<button class="message-source" data-action="sources" data-thread="${t.id}" data-message="${m.id}">${icon("book")} 依据：${esc(m.sources.map((s) => s.label).join("、"))} <span>V${m.sources[0].version}${m.sources[0].version !== state.published.version ? " · 已更新" : ""}</span>${icon("chevron")}</button>` : ""}${m.knowledgeIds?.includes("Q19") ? `<button class="handoff-button" data-action="q19-life" data-thread="${t.id}" data-message="${m.id}">带着问题问本地生活AI</button>` : ""}${!guest && !human ? ticket ? `<p class="handoff-state">${icon(ticket.status === "replied" ? "check" : "clock")}${ticket.status === "replied" ? "管家已回复，见下方" : ticket.status === "processing" ? "管家已接手，等待人工回复" : "已交给管家，等待接手"}</p>` : `<button class="handoff-button" data-action="handoff" data-thread="${t.id}" data-message="${m.id}">${icon("person")} ${m.status === "needs_human" ? "请管家确认" : "继续请教人工管家"}</button>` : ""}</div></article>`;
 	}
 	function composerView() {
-		const context = composer.context?.roomId ? state.published.rooms.find((r) => r.id === composer.context.roomId)?.name : composer.context?.spaceName;
+		const context = composer.context?.label || (composer.context?.roomId ? state.published.rooms.find((r) => r.id === composer.context.roomId)?.name : composer.context?.spaceName);
 		return `<form id="chat-form" class="chat-composer">${context ? `<div class="composer-context"><span>${icon("bed")} 正在问：${esc(context)}</span><button type="button" data-action="clear-context" aria-label="移除空间上下文">${icon("close")}</button></div>` : ""}<div class="composer-row"><textarea id="chat-input" name="question" aria-label="输入想问管家的问题" placeholder="问问厨房、停车、入住…" maxlength="1000" rows="1" ${!sessionId || !state.visible ? "disabled" : ""}>${esc(composer.body)}</textarea><button class="send-button" type="submit" aria-label="发送问题" ${!composer.body.trim() || !sessionId || !state.visible ? "disabled" : ""}>${icon("send")}</button></div><p class="composer-note">AI为本地资料匹配演示 · 不确定的事由管家确认</p></form>`;
 	}
 	function vr() {
@@ -6775,6 +7477,49 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return workspace.lifeChats[lifeChatKey(sessionId, currentCity().id, activePropertyId)] || [];
 	}
 	function handleExtraAction(a, b) {
+		if (a === "guide-ask") {
+			goChat(b.dataset.question || "想了解这项入住指引", {
+				kind: b.dataset.kind || "guide",
+				id: b.dataset.id,
+				label: b.dataset.label || "入住指引",
+				propertyId: activePropertyId,
+				unitId: target.unitId || null,
+				version: state.published.version
+			});
+			return true;
+		}
+		if (a === "guide-copy-address" || a === "recommendation-copy-address" || a === "copy-recommendation-address") {
+			const address = b.dataset.address || "";
+			if (!address) {
+				toast("尚无可复制地址，请联系管家");
+				return true;
+			}
+			if (navigator.clipboard?.writeText) navigator.clipboard.writeText(address).then(() => toast("地址已复制；地图打不开时可手动粘贴。")).catch(() => showDialog("手动复制地址", `<label class="field">地址<textarea readonly>${esc(address)}</textarea></label>`));
+			else showDialog("手动复制地址", `<label class="field">地址<textarea readonly>${esc(address)}</textarea></label>`);
+			return true;
+		}
+		if (a === "show-content-library") {
+			go("guest/life-library");
+			return true;
+		}
+		if (a === "recommendation-place" || a === "recommendation-route") {
+			go("guest/recommended-" + (a === "recommendation-place" ? "place" : "route") + "/" + encodeURIComponent(b.dataset.id));
+			return true;
+		}
+		if (a === "recommendation-ask") {
+			const c = recommendationContext(b.dataset.kind, b.dataset.id, state.published, lifeScope());
+			if (c) goLifeChat("想了解" + c.label + "，有什么需要注意的？", c);
+			else toast("该推荐暂不可用，请返回重新选择。");
+			return true;
+		}
+		if (a === "new-recommendation" || a === "edit-recommendation") {
+			recommendationEdit = {
+				kind: b.dataset.kind || "place",
+				id: b.dataset.id || null
+			};
+			go("merchant/recommendations");
+			return true;
+		}
 		if (a === "q19-life") {
 			const thread = state.threads[b.dataset.thread], message = thread?.messages.find((m) => m.id === b.dataset.message), original = thread?.messages.find((m) => m.id === message?.replyTo);
 			if (role() === "guest" && message?.knowledgeIds?.includes("Q19") && original) goLifeChat(original.body);
@@ -6858,7 +7603,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			return true;
 		}
 		if (a === "life-filter") {
-			lifeFilter = b.dataset.filter;
+			b.dataset.filter;
 			render();
 			return true;
 		}
@@ -6951,6 +7696,45 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return false;
 	}
 	function handleExtraSubmit(event) {
+		if (event.target.id === "recommendation-filter") {
+			event.preventDefault();
+			recommendationFilters = Object.fromEntries(new FormData(event.target));
+			render();
+			return true;
+		}
+		if (event.target.id === "guide-editor-form" || event.target.id === "recommendation-form") {
+			event.preventDefault();
+			if (role() !== "merchant") {
+				toast("请从商家端操作");
+				return true;
+			}
+			try {
+				const d = structuredClone(state.draft), data = new FormData(event.target);
+				if (event.target.id === "guide-editor-form") d.experience.guide = readGuideForm(data, d.experience.guide, activePropertyId);
+				else {
+					const key = {
+						place: "places",
+						route: "routes",
+						benefit: "benefits"
+					}[String(data.get("kind") || "place")];
+					if (!key) throw Error("内容类型无效");
+					const list = d.experience.recommendations[key];
+					const record = readRecommendationForm(data, list.find((r) => r.id === data.get("id")), activePropertyId), index = list.findIndex((r) => r.id === record.id);
+					if (index < 0) list.push(record);
+					else list[index] = record;
+				}
+				if (mutate({
+					type: "SAVE_DRAFT",
+					draft: d
+				}, "merchant")) {
+					render();
+					toast("已保存为待确认草稿，尚未发布。");
+				}
+			} catch (e) {
+				toast(e.message);
+			}
+			return true;
+		}
 		if ([
 			"new-property-form",
 			"unit-room-form",
@@ -7612,6 +8396,17 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	});
 	if (!location.hash) history.replaceState(null, "", location.pathname + location.search + "#/guest/home");
 	render();
+	document.addEventListener("error", (event) => {
+		const media = event.target;
+		if (media?.matches?.("video[data-guide-media],img[data-guide-media]")) {
+			const id = media.dataset.guideMedia;
+			const fallback = [...document.querySelectorAll("[data-guide-media-fallback]")].find((el) => el.dataset.guideMediaFallback === id);
+			if (fallback) {
+				fallback.hidden = false;
+				fallback.textContent = "媒体暂不可用，请继续查看下方图文和联系说明。";
+			}
+		}
+	}, true);
 	//#endregion
 })();
 </script></body>

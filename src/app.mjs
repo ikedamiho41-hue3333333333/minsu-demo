@@ -1,3 +1,7 @@
+import {arrivalMarkup,handbookMarkup,guideEditorMarkup} from './guide-ui.mjs';
+import {readGuideForm} from './guide.mjs';
+import {recommendationsMarkup,recommendedPlaceMarkup,recommendedRouteMarkup,recommendationEditorMarkup} from './recommendations-ui.mjs';
+import {recommendationContext,readRecommendationForm} from './recommendations.mjs';
 import {upgradeExperience} from './experience.mjs';
 import {propertyFormMarkup,unitManagerMarkup,roomFormMarkup,spaceFormMarkup} from './property-ui.mjs';
 import {createProperty,createRoom,saveRoom,saveSpace,setDraftRentalMode} from './catalog.mjs';
@@ -14,7 +18,7 @@ import {serviceDeskMarkup,ticketServiceMarkup,guestHandbookMarkup} from './servi
 
 const STORAGE='minsu-mini-v040',LEGACY_STORAGE='minsu-mini-v030',SESSION='minsu-mini-guest-session',DRAFT='minsu-mini-composer-v040';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let workspace,state,target,activePropertyId,merchantId,sessionId,storageError='',composer={body:'',context:null},editorCache=null,knowledgeCache=null,vrCache=null,replyCache={},roomFilter='all',queueFilter='all',mobileOpen=false,toastTimer,lastRoute='',dialogAction=null,returnFocus=null,lifeFilter='all',lifeDraft='',lifeContext=null,contentTab='places',contentCategory='all',contentQuery='',contentLimit=16;
+let workspace,state,target,activePropertyId,merchantId,sessionId,storageError='',composer={body:'',context:null},editorCache=null,knowledgeCache=null,vrCache=null,replyCache={},roomFilter='all',queueFilter='all',mobileOpen=false,toastTimer,lastRoute='',dialogAction=null,returnFocus=null,lifeFilter='all',lifeDraft='',lifeContext=null,contentTab='places',contentCategory='all',contentQuery='',contentLimit=16,recommendationFilters={period:'all',party:'all'},recommendationEdit={kind:'place',id:null};
 const customerPreview=new URLSearchParams(location.search).get('share')==='1';
 const mobilePresentation=()=>isMobilePresentation(location.search,window.innerWidth);
 function fitViewport(){document.documentElement.style.setProperty('--app-height',(window.visualViewport?.height||window.innerHeight)+'px');}
@@ -40,9 +44,11 @@ const guestSession=()=>sessionId?(activePropertyId==='legacy'&&!target.unitId?se
 const currentThread=()=>guestThreads(state,guestSession())[0];
 const currentEntry=()=>workspace.properties[activePropertyId];
 const currentCity=()=>currentEntry().city;
-const lifeScope=()=>({propertyId:activePropertyId,cityId:currentCity().id,cityName:currentCity().name});
+const lifeScope=()=>({propertyId:activePropertyId,unitId:target.unitId||null,cityId:currentCity().id,cityName:currentCity().name});
+function validLifeObject(context){return context?.collection==='recommendations'?recommendationContext(context.kind,context.id,state.published,lifeScope()):validContentContext(context,lifeScope());}
+function lifeContextMarkup(){const c=validLifeObject(lifeContext);return c?.collection==='recommendations'?`<div class="composer-context"><span>正在问：${esc(c.label)}</span><button type="button" data-action="clear-life-context" aria-label="移除本地生活对象">移除</button></div>`:contentContextChip(lifeContext,lifeScope());}
 function saveLifeDraft(){try{sessionStorage.setItem(lifeDraftKey(),lifeDraft);sessionStorage.setItem(lifeContextKey(),JSON.stringify(lifeContext));}catch{}}
-function goLifeChat(body='',context=null){lifeDraft=body;lifeContext=validContentContext(context,lifeScope());saveLifeDraft();go('guest/life-chat');}
+function goLifeChat(body='',context=null){lifeDraft=body;lifeContext=validLifeObject(context);saveLifeDraft();go('guest/life-chat');}
 function guestProperty(){const p={...state.published,rooms:state.published.rooms.filter(r=>r.enabled!==false)};if(currentEntry().rentalMode==='room'&&target.unitId){const room=p.rooms.find(r=>r.id===target.unitId);return {...p,name:room?.name||p.name,rooms:room?[room]:[]};}return p;}
 const pending=()=>Object.values(state.tickets).filter(t=>t.status!=='replied');
 const time=n=>new Intl.DateTimeFormat('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false}).format(n);
@@ -106,8 +112,9 @@ function headerInfo(){
   if(p==='chat'){title=state.published.name+' · AI管家';back='guest/home';}
   if(p==='vr'){title='VR看房';back='guest/home';}
   if(p==='room'){title='房间详情';back='guest/rooms';}
-  if(p==='space'){title='公共区域';back='guest/rooms';}if(p==='life'){title=currentCity().name+' · 本地生活';}if(p==='life-chat'){title=currentCity().name+' · 本地生活AI';back='guest/life';}if(['life-place','life-route','life-lead'].includes(p)){title=({'life-place':'地点资料','life-route':'主题路线','life-lead':'活动线索'})[p];back='guest/life';}if(p==='handbook'){title='入住服务手册';back='guest/home';}
+  if(p==='space'){title='公共区域';back='guest/rooms';}if(p==='life'){title=currentCity().name+' · 本地生活';}if(p==='life-chat'){title=currentCity().name+' · 本地生活AI';back='guest/life';}if(['life-place','life-route','life-lead'].includes(p)){title=({'life-place':'地点资料','life-route':'主题路线','life-lead':'活动线索'})[p];back='guest/life';}if(p==='handbook'){title='入住指南';back='guest/home';}
  }
+ if(r==='guest'){if(p==='arrival'){title='如何到店';back='guest/handbook';}if(p==='life-library'){title='完整资料预览';back='guest/life';}if(p==='recommended-place'||p==='recommended-route'){title=p==='recommended-place'?'精选地点':'推荐路线';back='guest/life';}}
  return {title,back};
 }
 	function demoEntrySwitch(currentRole) {
@@ -119,7 +126,7 @@ function render(){
  const prevScroll=$('.phone-body')?.scrollTop??0,prevRoute=lastRoute;lastRoute=location.hash;
  document.body.classList.toggle('customer-preview',customerPreview);
  document.body.classList.toggle('mobile-presentation',mobilePresentation());
- $('#app').innerHTML=`<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="assets/icon.svg" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.4.3</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon('house')} 小程序风格演示 <strong>· ${r==='guest'?'客人端':r==='merchant'?'商家端':'平台端'}</strong></span><span>${mobileOpen?'收起讲解':'演示控制'} ${icon(mobileOpen?'close':'more')}</span></button><main class="workspace">${mobilePresentation()?'':narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${target.ok||r!=='guest'?esc(state.published.name):'看房链接失效'} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon('signal')}${icon('wifi')}${icon('battery')}</span></div><header class="mini-header"><div class="mini-title">${info.back?`<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon('back')}</button>`:''}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation()&&!customerPreview?'演示入口与说明':'小程序演示说明'}">${icon('more')}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError?`<div class="error-banner">${esc(storageError)}</div>`:''}${localChat?lifeChat(workspace.life,currentCity(),lifeMessages(),lifeScope()):chat?renderChat():`<div class="phone-body ${p==='vr'&&r==='guest'?'vr-body':''}" id="phone-scroll">${content()}</div>`}${noTabs?'':tabbar()}${localChat?lifeComposer(lifeDraft,contentContextChip(lifeContext,lifeScope())):chat?composerView():r==='merchant'&&p==='editor'?editorActions():''}${r==='guest'&&['room','space'].includes(p)?detailActions():''}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
+ $('#app').innerHTML=`<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="assets/icon.svg" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.4.3</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon('house')} 小程序风格演示 <strong>· ${r==='guest'?'客人端':r==='merchant'?'商家端':'平台端'}</strong></span><span>${mobileOpen?'收起讲解':'演示控制'} ${icon(mobileOpen?'close':'more')}</span></button><main class="workspace">${mobilePresentation()?'':narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${target.ok||r!=='guest'?esc(state.published.name):'看房链接失效'} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon('signal')}${icon('wifi')}${icon('battery')}</span></div><header class="mini-header"><div class="mini-title">${info.back?`<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon('back')}</button>`:''}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation()&&!customerPreview?'演示入口与说明':'小程序演示说明'}">${icon('more')}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError?`<div class="error-banner">${esc(storageError)}</div>`:''}${localChat?lifeChat(workspace.life,currentCity(),lifeMessages(),lifeScope()):chat?renderChat():`<div class="phone-body ${p==='vr'&&r==='guest'?'vr-body':''}" id="phone-scroll">${content()}</div>`}${noTabs?'':tabbar()}${localChat?lifeComposer(lifeDraft,lifeContextMarkup()):chat?composerView():r==='merchant'&&p==='editor'?editorActions():''}${r==='guest'&&['room','space'].includes(p)?detailActions():''}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
  if(chat||localChat){const c=$('.chat-scroll');if(c)c.scrollTop=c.scrollHeight;const body=$('.phone-body');if(body)body.scrollTop=body.scrollHeight;}
  else if(prevRoute===location.hash&&$('.phone-body'))$('.phone-body').scrollTop=prevScroll;
  if(p==='editor'&&editorCache)fillEditor();
@@ -132,9 +139,9 @@ function content(){
  if(r==='guest'){
   if(!target.ok)return `<div class="page-pad"><div class="empty-state">${icon('house')}<h1 class="page-title">看房链接暂不可用</h1><p>${esc(target.message)}</p></div></div>`;
   if(!state.visible)return `<div class="page-pad"><div class="empty-state">${icon('house')}<h2>民宿资料暂时停止展示</h2><p>请联系民宿管家确认。恢复展示后可继续看房和咨询。</p></div>${btn('查看已有咨询','switch-chat','secondary wide')}</div>`;
-  if(p==='life')return contentHome(lifeScope(),{tab:contentTab,category:contentCategory,query:contentQuery,limit:contentLimit,eventsMarkup:eventsPreviewMarkup(workspace.life,currentCity())})??lifeHome(workspace.life,currentCity(),lifeFilter);if(p==='life-place')return placeContent(parts()[2],lifeScope());if(p==='life-route')return routeContent(parts()[2],lifeScope());if(p==='life-lead')return leadContent(parts()[2],lifeScope());if(p==='handbook')return `<div class="page-pad"><h1 class="page-title">入住服务手册</h1>${guestHandbookMarkup(activePropertyId,state.published.knowledge)||'<p class="notice">本房源暂无阶段服务手册，可从AI管家继续咨询。</p>'}</div>`;if(p==='arrival')return '<div class="page-pad"><h1 class="page-title">如何到店</h1><p class="notice">到店入口、停车点及路线待确认，请通过订单平台已有商家入口联系管家。</p></div>';if(p==='home')return home();if(p==='rooms')return rooms();if(p==='room')return roomDetail();if(p==='space')return spaceDetail();if(p==='vr')return vr();
+  if(p==='life')return recommendationsMarkup(state.published,lifeScope(),recommendationFilters);if(p==='recommended-place')return recommendedPlaceMarkup(parts()[2],state.published,lifeScope());if(p==='recommended-route')return recommendedRouteMarkup(parts()[2],state.published,lifeScope());if(p==='life-library')return contentHome(lifeScope(),{tab:contentTab,category:contentCategory,query:contentQuery,limit:contentLimit,eventsMarkup:eventsPreviewMarkup(workspace.life,currentCity())})||'<div class="page-pad"><h1 class="page-title">本房源暂无原稿资料库</h1><p class="notice">未将其他房源的专属资料混入本店。可从演示商家选择清欢资料预览，查看已有85条资料与5条主题路线。</p></div>';if(p==='life-place')return placeContent(parts()[2],lifeScope());if(p==='life-route')return routeContent(parts()[2],lifeScope());if(p==='life-lead')return leadContent(parts()[2],lifeScope());if(p==='handbook')return `<div class="page-pad">${handbookMarkup(activePropertyId,state.published)}</div>`;if(p==='arrival')return `<div class="page-pad">${arrivalMarkup(state.published,activePropertyId,target.unitId||null)}</div>`;if(p==='home')return home();if(p==='rooms')return rooms();if(p==='room')return roomDetail();if(p==='space')return spaceDetail();if(p==='vr')return vr();
  }
- if(r==='merchant'){if(p==='new-property')return propertyFormMarkup();if(p==='units')return unitManagerMarkup(state);if(p==='room-edit')return roomFormMarkup(state,parts()[2]);if(p==='space-edit')return spaceFormMarkup(state,parts()[2]);if(p==='service')return `<div class="page-pad"><h1 class="page-title">接待处置资料</h1><p class="page-description">按问题查看确认清单、内部动作建议和责任岗位。</p>${serviceDeskMarkup(activePropertyId,state.published.knowledge)||'<p class="notice">当前房源暂无此组资料。</p>'}</div>`;if(p==='home')return merchantHome();if(p==='queue')return queue();if(p==='ticket')return ticketDetail();if(p==='editor')return editor();if(p==='vr')return vrEditor();if(p==='knowledge')return knowledge();if(p==='knowledge-edit')return knowledgeEditor();}
+ if(r==='merchant'){if(p==='guide-editor')return `<div class="page-pad">${guideEditorMarkup(state,activePropertyId)}</div>`;if(p==='recommendations')return recommendationEditorMarkup(state.draft,activePropertyId,recommendationEdit);if(p==='new-property')return propertyFormMarkup();if(p==='units')return unitManagerMarkup(state);if(p==='room-edit')return roomFormMarkup(state,parts()[2]);if(p==='space-edit')return spaceFormMarkup(state,parts()[2]);if(p==='service')return `<div class="page-pad"><h1 class="page-title">接待处置资料</h1><p class="page-description">按问题查看确认清单、内部动作建议和责任岗位。</p>${serviceDeskMarkup(activePropertyId,state.published.knowledge)||'<p class="notice">当前房源暂无此组资料。</p>'}</div>`;if(p==='home')return merchantHome();if(p==='queue')return queue();if(p==='ticket')return ticketDetail();if(p==='editor')return editor();if(p==='vr')return vrEditor();if(p==='knowledge')return knowledge();if(p==='knowledge-edit')return knowledgeEditor();}
  if(r==='platform'){if(p==='activities')return activityAdmin(workspace.life);if(p==='event-edit')return activityForm(workspace.life.events[parts()[2]]||null);return platform();}
  return `<div class="page-pad"><h1 class="page-title">页面未找到</h1>${btn('返回民宿首页','guest-home','wide')}</div>`;
 }
@@ -166,11 +173,11 @@ function renderChat(){
 }
 function message(m,t){
  const ticket=Object.values(state.tickets).find(x=>x.messageId===m.id),human=m.role==='merchant',guest=m.role==='guest';
- const context=m.context?.roomId?state.published.rooms.find(r=>r.id===m.context.roomId)?.name:m.context?.spaceName;
+ const context=m.context?.label||(m.context?.roomId?state.published.rooms.find(r=>r.id===m.context.roomId)?.name:m.context?.spaceName);
  return `<article class="message ${m.role}">${guest?'':`<span class="message-avatar">${icon(human?'person':'spark')}</span>`}<div class="message-content">${guest?'':`<p class="message-name">${human?'民宿管家 · 人工回复':'AI小院管家'}</p>`}<div class="message-bubble">${context?`<span class="message-context">关于 ${esc(context)}</span>`:''}${esc(m.body)}</div>${m.sources?.length?`<button class="message-source" data-action="sources" data-thread="${t.id}" data-message="${m.id}">${icon('book')} 依据：${esc(m.sources.map(s=>s.label).join('、'))} <span>V${m.sources[0].version}${m.sources[0].version!==state.published.version?' · 已更新':''}</span>${icon('chevron')}</button>`:''}${m.knowledgeIds?.includes('Q19')?`<button class="handoff-button" data-action="q19-life" data-thread="${t.id}" data-message="${m.id}">带着问题问本地生活AI</button>`:''}${!guest&&!human?ticket?`<p class="handoff-state">${icon(ticket.status==='replied'?'check':'clock')}${ticket.status==='replied'?'管家已回复，见下方':ticket.status==='processing'?'管家已接手，等待人工回复':'已交给管家，等待接手'}</p>`:`<button class="handoff-button" data-action="handoff" data-thread="${t.id}" data-message="${m.id}">${icon('person')} ${m.status==='needs_human'?'请管家确认':'继续请教人工管家'}</button>`:''}</div></article>`;
 }
 function composerView(){
- const context=composer.context?.roomId?state.published.rooms.find(r=>r.id===composer.context.roomId)?.name:composer.context?.spaceName;
+ const context=composer.context?.label||(composer.context?.roomId?state.published.rooms.find(r=>r.id===composer.context.roomId)?.name:composer.context?.spaceName);
  return `<form id="chat-form" class="chat-composer">${context?`<div class="composer-context"><span>${icon('bed')} 正在问：${esc(context)}</span><button type="button" data-action="clear-context" aria-label="移除空间上下文">${icon('close')}</button></div>`:''}<div class="composer-row"><textarea id="chat-input" name="question" aria-label="输入想问管家的问题" placeholder="问问厨房、停车、入住…" maxlength="1000" rows="1" ${!sessionId||!state.visible?'disabled':''}>${esc(composer.body)}</textarea><button class="send-button" type="submit" aria-label="发送问题" ${!composer.body.trim()||!sessionId||!state.visible?'disabled':''}>${icon('send')}</button></div><p class="composer-note">AI为本地资料匹配演示 · 不确定的事由管家确认</p></form>`;
 }
 function vr(){
@@ -186,6 +193,16 @@ function merchantShareSection(){
 }
 function lifeMessages(){return workspace.lifeChats[lifeChatKey(sessionId,currentCity().id,activePropertyId)]||[];}
 function handleExtraAction(a,b){
+ if(a==='guide-ask'){goChat(b.dataset.question||'想了解这项入住指引',{kind:b.dataset.kind||'guide',id:b.dataset.id,label:b.dataset.label||'入住指引',propertyId:activePropertyId,unitId:target.unitId||null,version:state.published.version});return true;}
+ if(a==='guide-copy-address'||a==='recommendation-copy-address'||a==='copy-recommendation-address'){
+  const address=b.dataset.address||'';if(!address){toast('尚无可复制地址，请联系管家');return true;}
+  if(navigator.clipboard?.writeText)navigator.clipboard.writeText(address).then(()=>toast('地址已复制；地图打不开时可手动粘贴。')).catch(()=>showDialog('手动复制地址',`<label class="field">地址<textarea readonly>${esc(address)}</textarea></label>`));
+  else showDialog('手动复制地址',`<label class="field">地址<textarea readonly>${esc(address)}</textarea></label>`);return true;
+ }
+ if(a==='show-content-library'){go('guest/life-library');return true;}
+ if(a==='recommendation-place'||a==='recommendation-route'){go('guest/recommended-'+(a==='recommendation-place'?'place':'route')+'/'+encodeURIComponent(b.dataset.id));return true;}
+ if(a==='recommendation-ask'){const c=recommendationContext(b.dataset.kind,b.dataset.id,state.published,lifeScope());if(c)goLifeChat('想了解'+c.label+'，有什么需要注意的？',c);else toast('该推荐暂不可用，请返回重新选择。');return true;}
+ if(a==='new-recommendation'||a==='edit-recommendation'){recommendationEdit={kind:b.dataset.kind||'place',id:b.dataset.id||null};go('merchant/recommendations');return true;}
  if(a==='q19-life'){
   const thread=state.threads[b.dataset.thread],message=thread?.messages.find(m=>m.id===b.dataset.message),original=thread?.messages.find(m=>m.id===message?.replyTo);
   if(role()==='guest'&&message?.knowledgeIds?.includes('Q19')&&original)goLifeChat(original.body);
@@ -242,6 +259,16 @@ function handleExtraAction(a,b){
  return false;
 }
 function handleExtraSubmit(event){
+ if(event.target.id==='recommendation-filter'){event.preventDefault();recommendationFilters=Object.fromEntries(new FormData(event.target));render();return true;}
+ if(event.target.id==='guide-editor-form'||event.target.id==='recommendation-form'){
+  event.preventDefault();if(role()!=='merchant'){toast('请从商家端操作');return true;}
+  try{const d=structuredClone(state.draft),data=new FormData(event.target);
+   if(event.target.id==='guide-editor-form')d.experience.guide=readGuideForm(data,d.experience.guide,activePropertyId);
+   else{const kind=String(data.get('kind')||'place'),key=({place:'places',route:'routes',benefit:'benefits'})[kind];if(!key)throw Error('内容类型无效');const list=d.experience.recommendations[key],previous=list.find(r=>r.id===data.get('id'));const record=readRecommendationForm(data,previous,activePropertyId),index=list.findIndex(r=>r.id===record.id);if(index<0)list.push(record);else list[index]=record;}
+   if(mutate({type:'SAVE_DRAFT',draft:d},'merchant')){render();toast('已保存为待确认草稿，尚未发布。');}
+  }catch(e){toast(e.message);}return true;
+ }
+
  if(['new-property-form','unit-room-form','unit-space-form','rental-mode-form'].includes(event.target.id)){
   event.preventDefault();if(role()!=='merchant'){toast('请从商家端操作');return true;}
   try{const f=event.target,data=Object.fromEntries(new FormData(f));let next;
@@ -428,3 +455,5 @@ window.addEventListener('hashchange',()=>{if($('#detail-dialog').open)closeDialo
 window.addEventListener('storage',e=>{if(e.key===STORAGE&&e.newValue){try{const next=JSON.parse(e.newValue);if(next.schema===2&&next.revision!==workspace.revision){workspace=next;setActive();render();toast('已同步另一窗口的房源与活动更新。');}}catch{toast('另一窗口资料格式异常，保留当前页面。');}}});
 if(!location.hash)history.replaceState(null,'',location.pathname+location.search+'#/guest/home');
 render();
+
+document.addEventListener('error',event=>{const media=event.target;if(media?.matches?.('video[data-guide-media],img[data-guide-media]')){const id=media.dataset.guideMedia;const fallback=[...document.querySelectorAll('[data-guide-media-fallback]')].find(el=>el.dataset.guideMediaFallback===id);if(fallback){fallback.hidden=false;fallback.textContent='媒体暂不可用，请继续查看下方图文和联系说明。';}}},true);
