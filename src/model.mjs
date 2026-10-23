@@ -1,5 +1,6 @@
 import {matchQinghuanGuides,analyzeQinghuanQuestion} from './qinghuan.mjs';
 import {requestedScopes,scopeLabel,scopeKey,relevantFacts,intersection,difference,configurationQuestion,precautions} from './answer-scopes.mjs';
+import {answerExperience,answerState,contextIssue,answerKind,originalGuideQuestion,canonicalCoreContext} from './experience-answer.mjs';
 
 const clone=x=>structuredClone(x);
 const own=(obj,key)=>Object.hasOwn(obj,key);
@@ -39,6 +40,28 @@ export function createSeed(){
 }
 
 export function answer(state,question,context=null){
+ if(!state.visible)return {status:'unavailable',body:'本民宿资料暂时停止展示，请联系管家。',sources:[],knowledgeIds:[],context:null};
+ const issue=contextIssue(state,context);if(issue)return {...issue,mode:context?.scope==='local'?'local':'property'};
+ const current=answerState(state,context),adapted=answerExperience(current,question,context);
+ const finish=result=>{
+  const kind=answerKind(question);
+  if(state.published.experience&&kind==='request'&&!originalGuideQuestion(current.published,question)&&result.status==='answered'){
+   return {...result,answerKind:kind,status:'needs_human',body:result.body+'\n\n这是服务需求或故障咨询，需要人工确认；当前仅整理问题，尚未预约、派修或完成服务。'};
+  }
+  return result;
+ };
+ if(adapted){
+  if(adapted.mode==='property_guide'){
+   const core=answerCore(current,question,context);
+   if(core.sources?.length&&/规则|免费|收费|费用|可以|能否|几点|开放|时间|宠物|厨房/.test(question))return finish({...core,mode:'property',answerKind:answerKind(question),context:adapted.context});
+  }
+  return finish({...adapted,mode:adapted.mode??(context?.scope==='local'?'local':'property')});
+ }
+ const result=answerCore(current,question,context),kind=answerKind(question);
+ return finish({...result,mode:context?.scope==='local'?'property':result.mode,answerKind:kind,context:canonicalCoreContext(current,context)});
+}
+
+function answerCore(state,question,context=null){
  const p={...state.published,rooms:state.published.rooms.filter(r=>r.enabled!==false)},q=norm(question),sources=[],parts=[],missing=[];
  let needsClarification=false;
  if(!state.visible)return {status:'unavailable',body:'本民宿资料暂时停止展示，请联系管家。',sources:[]};
@@ -167,15 +190,15 @@ export function dispatch(state,action,ctx){
   else t=guestThreads(s,ctx.sessionId)[0];
   if(!t){t={id:id(),propertyId:s.propertyId,owner:ctx.sessionId,messages:[],createdAt:now};s.threads[t.id]=t;}
   const a=answer(s,body,action.context??null),guestId=id();
-  t.messages.push({id:guestId,role:'guest',body,context:action.context??null,at:now});
-  t.messages.push({id:id(),role:'assistant',body:a.body,status:a.status,sources:a.sources,knowledgeIds:clone(a.knowledgeIds??[]),replyTo:guestId,at:now});
+  t.messages.push({id:guestId,role:'guest',body,context:clone(action.context??null),at:now});
+  t.messages.push({id:id(),role:'assistant',body:a.body,status:a.status,sources:clone(a.sources??[]),knowledgeIds:clone(a.knowledgeIds??[]),mode:a.mode??'property',answerKind:a.answerKind??'rule',context:clone(a.context??null),resolvedContext:clone(a.context??null),contextLabel:a.context?.label??null,propertyId:s.propertyId,version:s.published.version,replyTo:guestId,at:now});
  }
  if(type==='HANDOFF'){
   const t=s.threads[action.threadId];if(!t||t.owner!==ctx.sessionId||t.propertyId!==s.propertyId)throw Error('找不到本人的会话');
   const m=t.messages.find(m=>m.id===action.messageId&&m.role==='assistant');if(!m)throw Error('找不到需要确认的问题');
   if(!Object.values(s.tickets).some(x=>x.messageId===m.id)){
    const g=t.messages.find(x=>x.id===m.replyTo),ticketId=id();
-   s.tickets[ticketId]={id:ticketId,threadId:t.id,messageId:m.id,question:g.body,context:g.context,knowledgeIds:clone(m.knowledgeIds??[]),status:'pending',createdAt:now,reply:null};
+   s.tickets[ticketId]={id:ticketId,threadId:t.id,messageId:m.id,question:g.body,context:clone(g.context),contextLabel:m.contextLabel??g.context?.label??null,propertyId:s.propertyId,version:m.version??s.published.version,knowledgeIds:clone(m.knowledgeIds??[]),status:'pending',createdAt:now,reply:null};
   }
  }
  if(type==='ACCEPT'||type==='REPLY'){
@@ -183,6 +206,8 @@ export function dispatch(state,action,ctx){
   if(type==='ACCEPT'&&ticket.status==='pending')ticket.status='processing';
   if(type==='REPLY'){
    if(ticket.status==='replied')throw Error('这条咨询已回复，请勿重复发送');
+   if(s.published.experience&&ticket.status!=='processing')throw Error('请先接手这条咨询，再发送人工回复');
+   const thread=s.threads[ticket.threadId];if(!thread||thread.propertyId!==s.propertyId||ticket.propertyId&&ticket.propertyId!==s.propertyId)throw Error('原咨询不属于当前房源，请返回工作台核对');
    const body=text(action.body,'回复');const m={id:id(),role:'merchant',body,replyTo:ticket.messageId,at:now};
    s.threads[ticket.threadId].messages.push(m);ticket.status='replied';ticket.reply=m;
   }

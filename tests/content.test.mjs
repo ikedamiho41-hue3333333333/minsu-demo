@@ -64,7 +64,7 @@ test('清欢资料问答不把店规问题或未知店名编成攻略，内部�
  const missing=answer('不存在的门店XYZ几点开门？');assert.match(missing.body,/没有|未找到|未收录/);
 });
 test('本地生活会话按房源隔离，旧示例会话键保留兼容',()=>{
- assert.equal(api.lifeChatKey?.('session','dali','lake-inn'),'session:dali');
+ assert.equal(api.lifeChatKey?.('session','dali','lake-inn'),'session:dali:lake-inn');
  assert.equal(api.lifeChatKey('session','dali','qinghuan-dali'),'session:dali:qinghuan-dali');
  assert.notEqual(api.lifeChatKey('session','dali','lake-inn'),api.lifeChatKey('session','dali','qinghuan-dali'));
 });

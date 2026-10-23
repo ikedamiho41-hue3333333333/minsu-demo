@@ -20,7 +20,7 @@ export function validContentContext(context,scope){
  if(!context||context.propertyId!==scope?.propertyId||context.cityId!==scope?.cityId)return null;
  return makeContentContext(context.kind,context.id,scope);
 }
-export const lifeChatKey=(sessionId,cityId,propertyId)=>`${sessionId}:${cityId}${propertyId==='qinghuan-dali'?':qinghuan-dali':''}`;
+export const lifeChatKey=(sessionId,cityId,propertyId,unitId=null)=>`${sessionId}:${cityId}:${propertyId||'unscoped'}${unitId?':'+unitId:''}`;
 // Public previews explain the source, without promoting raw prices or contact details to verified facts.
 export const previewCopy=value=>String(value??'').replace(/\d+(?:[—\-~～/]\d+)*(?:\.\d+)?\s*元(?:\/人)?/g,'费用待确认').replace(/(?:24小时营业|24h营业|24H营业)/g,'营业时段待确认');
 export function publicContentNotes(item){

@@ -17,8 +17,8 @@ export function lifeChat(life,city,messages,scope={}){
  const welcome=`<div class="welcome"><div class="ai-avatar">${icon('leaf')}</div><h1>在${e(city.name)}，<br><span>想怎么度过这几天？</span></h1><p>${qinghuan?'可按清欢原稿了解地点、五条主题路线和活动来源线索。营业、价格、交通与预约仍待核验。':'了解吃喝、安排轻松游玩，也看看最近的活动。这里的问答与民宿入住规则分开。'}</p></div><div class="suggested">${(qinghuan?['带孩子只有半天怎么玩','下雨了，不想爬山，去哪玩','有哪些活动来源线索']:['最近有什么本地活动','附近有什么好吃的','带孩子半天怎么玩']).map(q=>`<button data-action="life-prefill" data-question="${e(q)}">${e(q)}${icon('arrow')}</button>`).join('')}</div><p class="chat-tip">${qinghuan?'从地点或路线进入可保留所选对象；发送后查看资料出处。':'活动会显示来源与时间；没有实时资料时会直接说明。'}</p>`;
  return `<div class="chat-info">${icon('spark')} ${qinghuan?'清欢原稿 · 本地资料问答':e(city.name)+'本地生活 · 本地示例问答'} · 豆包接口待接入</div><div class="phone-body chat-body"><div class="chat-scroll">${messages.length?rendered:welcome}</div></div>`;
 }
-export function lifeComposer(draft,contextMarkup=''){
- return `<form id="life-chat-form" class="chat-composer">${contextMarkup}<div class="composer-row"><textarea id="life-chat-input" aria-label="输入本地生活问题" placeholder="问吃喝、游玩、本地活动…" maxlength="1000" rows="1">${e(draft)}</textarea><button class="send-button" type="submit" aria-label="发送本地生活问题" ${draft.trim()?'':'disabled'}>${icon('send')}</button></div><p class="composer-note">本地资料问答演示 · 豆包与真实活动来源待接入</p></form>`;
+export function lifeComposer(draft,contextMarkup='',disabled=false){
+ return `<form id="life-chat-form" class="chat-composer">${contextMarkup}<div class="composer-row"><textarea id="life-chat-input" ${disabled?'disabled':''} aria-label="输入本地生活问题" placeholder="问吃喝、游玩、本地活动…" maxlength="1000" rows="1">${e(draft)}</textarea><button class="send-button" type="submit" aria-label="发送本地生活问题" ${!disabled&&draft.trim()?'':'disabled'}>${icon('send')}</button></div><p class="composer-note">本地资料问答演示 · 豆包与真实活动来源待接入</p></form>`;
 }
 export function eventsPreviewMarkup(life,city){
  const events=eventsFor(life,city.id);

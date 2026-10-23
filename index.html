@@ -207,6 +207,8 @@ body.mobile-presentation{background:#e9eee7;font-size:15px;overflow:hidden;-webk
 .home-quick-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.home-quick-actions .btn{flex:1;min-width:85px;min-height:44px;font-size:13px}.page-pad select{max-width:100%}.field input,.field textarea,.field select{min-width:0}
 
 .guide-points,.guide-media-list{display:grid;gap:18px}.guide-point,.guide-step,.guide-media,.recommendation-card{padding-block:16px;border-bottom:1px solid var(--line)}.guide-point h2,.guide-media h2{font-size:18px;margin-bottom:8px}.guide-actions{display:flex;gap:8px;flex-wrap:wrap}.guide-actions>*{min-height:44px}.guide-media video,.guide-media img{display:block;max-width:100%;height:auto;margin:12px 0}.guide-media video{width:100%;min-height:140px;background:#edf0e8}.recommendation-filter{display:grid;grid-template-columns:1fr 1fr;gap:12px}.recommendation-filter .btn{grid-column:1/-1}.recommendation-detail p,.guide-point p{overflow-wrap:anywhere}.recommended-links{display:flex;gap:8px;flex-wrap:wrap}
+
+.assistant-scopes{display:flex;gap:8px;padding:6px 14px;flex:none;border-bottom:1px solid var(--line);background:#fff}.assistant-scopes button{flex:1;min-height:44px;background:#f0f3e9;color:var(--green);font-size:14px;border-radius:8px}.assistant-scopes button[aria-pressed=true]{background:var(--green);color:#fff}.restore-draft{width:100%;font-size:12px;min-height:32px;padding:4px 0}.legacy-chat{margin-top:20px;font-size:13px;line-height:1.8}.legacy-chat summary{min-height:44px;cursor:pointer}
 </style>
 
 </head>
@@ -226,6 +228,27 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
  });
 }
 (function() {
+	//#region src/conversation-drafts.mjs
+	function selectDraft(draft, body, context) {
+		const next = structuredClone(draft);
+		if (body !== void 0 && body !== next.body) {
+			if (next.body?.trim()) next.previous = {
+				body: next.body,
+				context: structuredClone(next.context)
+			};
+			next.body = body;
+		}
+		if (context !== void 0) next.context = structuredClone(context);
+		return next;
+	}
+	function restoreDraft(draft) {
+		return draft.previous ? {
+			...structuredClone(draft),
+			...structuredClone(draft.previous),
+			previous: null
+		} : structuredClone(draft);
+	}
+	//#endregion
 	//#region src/experience.mjs
 	function contentRecord(id, propertyId, values = {}) {
 		return {
@@ -1825,456 +1848,6 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return (String(text).match(/[^。！？?!]+[。！？?!]?/g) || []).filter((sentence) => /远离危险|不要自行拆修|紧急救援|不徒手接触|先停止使用|先到明亮/.test(sentence)).join("");
 	}
 	//#endregion
-	//#region src/model.mjs
-	const clone$2 = (x) => structuredClone(x);
-	const own$2 = (obj, key) => Object.hasOwn(obj, key);
-	const norm$1 = (x) => String(x ?? "").normalize("NFKC").replace(/[\s？?。！!，,、]/g, "").toLowerCase();
-	const id = () => globalThis.crypto.randomUUID();
-	const TOPICS = {
-		kitchen: {
-			label: "厨房使用规则",
-			pattern: /厨房|做饭|煮饭|烹饪|锅具|厨具/
-		},
-		parking: {
-			label: "停车说明",
-			pattern: /停车|车位|自驾|停哪/
-		},
-		checkin: {
-			label: "入住与退房",
-			pattern: /入住|退房|几点到|提前到|晚到/
-		},
-		location: {
-			label: "位置与交通",
-			pattern: /地址|在哪|位置|怎么去|怎么走|导航|交通/
-		},
-		environment: {
-			label: "环境与公共区域",
-			pattern: /院子|庭院|环境|客厅|公共区/
-		},
-		wifi: {
-			label: "网络与设施",
-			pattern: /wifi|wi-fi|无线|网络|空调|吹风机|洗衣/i
-		},
-		pets: {
-			label: "宠物规则",
-			pattern: /宠物|带狗|带猫|狗狗|猫咪/
-		},
-		breakfast: {
-			label: "早餐说明",
-			pattern: /早餐|早饭/
-		},
-		barbecue: {
-			label: "烧烤规则",
-			pattern: /烧烤|烤肉/
-		},
-		accessibility: {
-			label: "无障碍与通行",
-			pattern: /轮椅|无障碍|楼梯|电梯/
-		},
-		price: {
-			label: "价格与预订",
-			pattern: /价格|多少钱|预订|预定|房价|退款|取消订单/
-		},
-		nearby: {
-			label: "周边吃喝玩乐",
-			pattern: /周边|附近|餐厅|景点|吃什么|去哪玩/
-		}
-	};
-	function createSeed() {
-		const draft = {
-			name: "松间小院",
-			subtitle: "住进山间，把日子慢下来。",
-			location: "浙江 · 莫干山（虚构示例）",
-			description: "一座被绿意围住的小院。清晨在院子里喝茶，午后一起做饭，晚上把时间留给家人和朋友。",
-			facts: {
-				kitchen: { text: "厨房可以做饭，开放时间为10:00—20:00，需提前向管家预约。提供基础锅具和餐具；食材、调料请自备，使用后请清洁归位。" },
-				parking: { text: "院外有3个免费停车位，车位先到先停，不提供预留。到达前请联系管家确认当天情况。" },
-				checkin: { text: "入住时间为14:00后，退房时间为次日12:00前。需登记每位入住人的身份信息；提前入住、延迟退房请管家单独确认。" },
-				location: { text: "民宿位于浙江莫干山地区，原型使用虚构地址，不提供真实导航。实际到店路线需由管家提供。" },
-				environment: { text: "有独立庭院、共享客厅和共享厨房。庭院与客厅开放至22:00，22:00后请降低音量。" },
-				wifi: { text: "客房与共享客厅提供Wi-Fi；客房配有空调、吹风机。Wi-Fi密码到店后向管家获取；洗衣设施尚未记录。" }
-			},
-			rooms: [{
-				id: "mountain",
-				name: "听山 · 大床房",
-				type: "大床房",
-				floor: "二楼",
-				area: "约28㎡",
-				beds: "1张1.8米大床",
-				capacity: "建议2人入住",
-				bath: "独立卫浴",
-				photo: "bedroom",
-				description: "窗外是满眼山色，房内以原木与棉麻为主。",
-				facilities: [
-					"独立卫浴",
-					"空调",
-					"Wi-Fi",
-					"吹风机"
-				]
-			}, {
-				id: "courtyard",
-				name: "望院 · 双床房",
-				type: "双床房",
-				floor: "一楼",
-				area: "约30㎡",
-				beds: "2张1.2米单人床",
-				capacity: "建议2人入住",
-				bath: "独立卫浴",
-				photo: "bedroom",
-				description: "面向庭院，适合朋友同行。图片仅作空间氛围示意。",
-				facilities: [
-					"独立卫浴",
-					"空调",
-					"Wi-Fi",
-					"吹风机"
-				]
-			}],
-			knowledge: [],
-			vrUrl: "https://tujia.realsee.cn/redJnEMB",
-			vrKind: "reference",
-			vrLabel: "身临其境，感受空间",
-			vrDescription: "走进空间，感受一间民宿。"
-		};
-		return {
-			schema: 1,
-			revision: 0,
-			propertyId: "songjian-demo",
-			visible: true,
-			draft,
-			published: {
-				...clone$2(draft),
-				version: 1,
-				publishedAt: Date.now()
-			},
-			draftDirty: false,
-			threads: {},
-			tickets: {},
-			operations: {}
-		};
-	}
-	function answer(state, question, context = null) {
-		const p = {
-			...state.published,
-			rooms: state.published.rooms.filter((r) => r.enabled !== false)
-		}, q = norm$1(question), sources = [], parts = [], missing = [];
-		let needsClarification = false;
-		if (!state.visible) return {
-			status: "unavailable",
-			body: "本民宿资料暂时停止展示，请联系管家。",
-			sources: []
-		};
-		if (context?.roomId && !p.rooms.some((r) => r.id === context.roomId)) return {
-			status: "needs_clarification",
-			body: "这个房间不在本民宿当前公开资料中，请重新选择房间。",
-			sources: []
-		};
-		const add = (key, label, text, metadata = {}) => {
-			if (sources.some((source) => source.key === key)) return;
-			sources.push({
-				key,
-				label,
-				text,
-				version: p.version,
-				...metadata
-			});
-			parts.push(text);
-		};
-		const guideMetadata = (k) => ({
-			kind: k.kind,
-			requiresHuman: k.requiresHuman !== false,
-			sourceLabel: k.sourceLabel,
-			sourceRange: k.sourceRange
-		});
-		const addKnowledge = (k) => add("knowledge:" + k.id, k.question, k.text, k.kind === "confirmation_guide" ? guideMetadata(k) : {});
-		const pendingGuide = (k) => k.kind === "confirmation_guide" && k.requiresHuman !== false;
-		const analysis = analyzeQinghuanQuestion(p, question), guideMatches = analysis.guides, knowledgeIds = guideMatches.map((guide) => guide.id);
-		const exactKnowledge = p.knowledge.find((k) => !pendingGuide(k) && [k.question, ...k.aliases].some((a) => norm$1(a) === q));
-		const contextualQuestion = /开放|时间|几点|这里|这个空间/.test(q) && [
-			"独立庭院",
-			"共享厨房",
-			"共享客厅"
-		].includes(context?.spaceName) ? q + norm$1(context.spaceName) : q;
-		const requested = requestedScopes(contextualQuestion);
-		const knownFor = (scopes, keys = null) => relevantFacts(p, scopes, keys);
-		const addFacts = (facts) => {
-			for (const fact of facts) add(fact.key, TOPICS[fact.key]?.label || fact.key, fact.text);
-		};
-		const wholeQuestion = p.rentalMode === "whole" && /整院|包栋|整栋|几间卧室/.test(q);
-		function resolveRoom(query) {
-			const named = p.rooms.filter((r) => query.includes(norm$1(r.name.split(" · ")[0])) || query.includes(norm$1(r.type)));
-			return context?.roomId ? p.rooms.find((r) => r.id === context.roomId) : named.length === 1 ? named[0] : null;
-		}
-		function addRoomConfiguration(query, whole = false) {
-			if (whole) {
-				add("whole", "整院配置", `${p.name}按整院包栋出租，包含${p.rooms.length}间卧室，不单独出租卧室。${p.wholeCapacity || "整院总入住人数尚未记录，请管家确认。"}床型配置：${p.rooms.map((r) => r.name + "，" + r.beds).join("；")}。`);
-				return;
-			}
-			if (p.profilePending === true && !p.rooms.length) {
-				missing.push("房间配置与面积（房源资料待录入）");
-				return;
-			}
-			const room = resolveRoom(query);
-			if (room) add("room:" + room.id, room.name, `${room.name}位于${room.floor}，${room.area}，配置${room.beds}、${room.bath}，${room.capacity}。已记录设施：${room.facilities.join("、")}。`);
-			else {
-				needsClarification = true;
-				parts.push("你想了解哪一间房？可以先在「房间设施」选择" + p.rooms.map((r) => r.name).join("、") + "，再带着房间来问我。");
-			}
-		}
-		const finish = (pending = false) => {
-			if (missing.length) parts.push(`本店资料尚未记录${[...new Set(missing)].join("、")}，我暂时无法确认。可以点击下方「请管家确认」，把问题交给民宿管家。`);
-			return {
-				status: pending || missing.length ? "needs_human" : needsClarification ? "needs_clarification" : "answered",
-				body: parts.join("\n\n"),
-				sources,
-				knowledgeIds
-			};
-		};
-		const exactClaims = exactKnowledge ? requestedScopes(question + "；" + exactKnowledge.text) : /* @__PURE__ */ new Set();
-		const structuralConflict = exactKnowledge && configurationQuestion(question + "；" + exactKnowledge.text) && (resolveRoom(q) || wholeQuestion);
-		if (exactKnowledge && !knownFor(exactClaims).length && !structuralConflict) {
-			addKnowledge(exactKnowledge);
-			return finish();
-		}
-		if (structuralConflict) {
-			for (const scope of ["extra-bed", "crib"]) if (requested.has(scope)) missing.push(scopeLabel(scope));
-		}
-		if (guideMatches.length && !exactKnowledge) {
-			const owned = /* @__PURE__ */ new Set(), guides = guideMatches.filter(pendingGuide);
-			for (const guide of guideMatches) {
-				const guideScopes = requestedScopes([guide.question, ...guide.aliases].join("；"));
-				for (const scope of guideScopes) owned.add(scope);
-				const guideRequest = intersection(requested, guideScopes);
-				const pending = pendingGuide(guide);
-				const facts = knownFor(pending ? guideRequest : /* @__PURE__ */ new Set([...guideRequest, ...requestedScopes(guide.text)]), guide.topics);
-				addFacts(facts);
-				if (!pending && facts.length) {
-					const covered = new Set(facts.flatMap((fact) => [...fact.scopes]));
-					for (const scope of difference(guideRequest, covered)) missing.push(scopeLabel(scope));
-					continue;
-				}
-				const advice = precautions(guide.text);
-				const body = facts.length ? `${advice ? advice + "\n" : ""}${guide.question}\n其余待确认项：${guide.confirmationChecklist}（以上公开规则已明确的部分除外）。` : guide.text;
-				add("knowledge:" + guide.id, guide.id + (pending ? " · 待确认指南" : " · 已确认公开答复"), body, guideMetadata(guide));
-			}
-			const remainderScopes = requestedScopes(analysis.remainder), extraScopes = difference(remainderScopes, owned);
-			if (remainderScopes.has("room") && configurationQuestion(analysis.remainder)) extraScopes.add("room");
-			for (const scope of extraScopes) {
-				if (scope === "room") {
-					addRoomConfiguration(norm$1(analysis.remainder), p.rentalMode === "whole" && configurationQuestion(analysis.remainder));
-					continue;
-				}
-				const facts = knownFor(/* @__PURE__ */ new Set([scope]));
-				if (facts.length) addFacts(facts);
-				else missing.push(scopeLabel(scope));
-			}
-			for (const clause of analysis.remainder.split(/[，,。.!！?？；;:：\n]|另外|还有|以及|顺便|并且|同时/).filter((part) => part.trim())) if (!requestedScopes(clause).size && !matchQinghuanGuides(p, clause).length && /吗|能|可以|怎么|如何|是否|提供|安排|帮/.test(clause)) missing.push("“" + clause.trim() + "”");
-			return finish(guides.length > 0);
-		}
-		const roomQuestion = /房间|房型|床|卫浴|浴室|几人|几个人|住几|面积|楼层|几楼/.test(q);
-		if (wholeQuestion) addRoomConfiguration(q, true);
-		if (roomQuestion && !wholeQuestion) addRoomConfiguration(q);
-		const matched = Object.entries(TOPICS).filter(([key, topic]) => topic.pattern.test(contextualQuestion) || [...requested].some((scope) => scopeKey(scope) === key));
-		for (const [key, topic] of matched) {
-			const scopes = new Set([...requested].filter((scope) => scopeKey(scope) === key));
-			const facts = knownFor(scopes, [key]);
-			if (facts.length) {
-				addFacts(facts);
-				const covered = new Set(facts.flatMap((fact) => [...fact.scopes]));
-				for (const scope of difference(scopes, covered)) missing.push(scopeLabel(scope));
-			} else missing.push(topic.label);
-		}
-		if (!matched.length && !roomQuestion && !wholeQuestion) {
-			if (/^(你好|您好|嗨|hello|hi)$/.test(q)) return {
-				status: "answered",
-				body: `你好，我是${p.name}的AI管家。可以问我厨房、停车、入住，或先看看房间。资料里没有的，我会请民宿管家确认。`,
-				sources: []
-			};
-			missing.push("这个问题");
-		}
-		return finish();
-	}
-	function guestThreads(state, sessionId) {
-		return Object.values(state.threads).filter((t) => t.owner === sessionId && t.propertyId === state.propertyId);
-	}
-	function text$3(value, label, max = 1e3) {
-		if (typeof value !== "string" || !value.trim() || value.trim().length > max) throw Error(`请填写${label}（1—${max}字）`);
-		return value.trim();
-	}
-	function validateDraft(d) {
-		if (!d || typeof d !== "object") throw Error("资料格式不正确");
-		text$3(d.name, "民宿名称", 40);
-		text$3(d.subtitle, "民宿短句", 80);
-		text$3(d.location, "位置", 200);
-		text$3(d.description, "民宿介绍", 1e3);
-		for (const k of Object.keys(TOPICS)) if (d.facts[k]) {
-			if (typeof d.facts[k].text !== "string" || d.facts[k].text.length > 1e3) throw Error("使用规则需在1000字以内");
-		}
-		if (d.rooms.length < (d.profilePending === true ? 0 : 1) || d.rooms.length > 10) throw Error("请保留1—10间房");
-		for (const r of d.rooms) for (const k of [
-			"name",
-			"floor",
-			"area",
-			"beds",
-			"capacity",
-			"bath"
-		]) text$3(r[k], "房间资料", 100);
-		if (d.vrUrl !== "https://tujia.realsee.cn/redJnEMB") throw Error("本轮仅使用已指定的VR参考案例");
-		if (d.vrLabel !== void 0) text$3(d.vrLabel, "VR入口说明", 80);
-		if (d.vrDescription !== void 0) text$3(d.vrDescription, "VR展示说明", 500);
-		if (d.knowledge.length > 50) throw Error("知识条目最多50条");
-		const keys = /* @__PURE__ */ new Set();
-		for (const k of d.knowledge) {
-			text$3(k.question, "公开问题", 200);
-			text$3(k.text, "公开答案", 1e3);
-			if (!Array.isArray(k.aliases) || k.aliases.length > 5) throw Error("相似问法最多5个");
-			for (const alias of [k.question, ...k.aliases]) {
-				text$3(alias, "问法", 200);
-				const key = norm$1(alias);
-				if (keys.has(key)) throw Error("已有相同问法，请编辑原知识");
-				keys.add(key);
-			}
-		}
-	}
-	function dispatch(state, action, ctx) {
-		const { type } = action;
-		if (!ctx?.sessionId) throw Error("无法保持演示会话，请启用浏览器会话存储");
-		const guestActions = ["ASK", "HANDOFF"], merchantActions = [
-			"REPLY",
-			"ACCEPT",
-			"SAVE_DRAFT",
-			"PUBLISH",
-			"SAVE_KNOWLEDGE",
-			"DELETE_KNOWLEDGE"
-		];
-		if (guestActions.includes(type) && ctx.role !== "guest") throw Error("请从客人端操作");
-		if (merchantActions.includes(type) && ctx.role !== "merchant") throw Error("请从商家端操作");
-		if (type === "SET_VISIBLE" && ctx.role !== "platform") throw Error("请从平台端操作");
-		if (![
-			...guestActions,
-			...merchantActions,
-			"SET_VISIBLE"
-		].includes(type)) throw Error("未知操作");
-		const operationKey = action.operation ? `${ctx.sessionId}:${type}:${action.operation}` : null;
-		if (operationKey && own$2(state.operations, operationKey)) return state;
-		const s = clone$2(state), now = Date.now();
-		if (type === "ASK") {
-			if (!s.visible) throw Error("本民宿资料暂停展示，请联系管家");
-			const body = text$3(action.body, "问题");
-			let t;
-			if (action.threadId) {
-				t = s.threads[action.threadId];
-				if (!t || t.owner !== ctx.sessionId || t.propertyId !== s.propertyId) throw Error("找不到本人的会话");
-			} else t = guestThreads(s, ctx.sessionId)[0];
-			if (!t) {
-				t = {
-					id: id(),
-					propertyId: s.propertyId,
-					owner: ctx.sessionId,
-					messages: [],
-					createdAt: now
-				};
-				s.threads[t.id] = t;
-			}
-			const a = answer(s, body, action.context ?? null), guestId = id();
-			t.messages.push({
-				id: guestId,
-				role: "guest",
-				body,
-				context: action.context ?? null,
-				at: now
-			});
-			t.messages.push({
-				id: id(),
-				role: "assistant",
-				body: a.body,
-				status: a.status,
-				sources: a.sources,
-				knowledgeIds: clone$2(a.knowledgeIds ?? []),
-				replyTo: guestId,
-				at: now
-			});
-		}
-		if (type === "HANDOFF") {
-			const t = s.threads[action.threadId];
-			if (!t || t.owner !== ctx.sessionId || t.propertyId !== s.propertyId) throw Error("找不到本人的会话");
-			const m = t.messages.find((m) => m.id === action.messageId && m.role === "assistant");
-			if (!m) throw Error("找不到需要确认的问题");
-			if (!Object.values(s.tickets).some((x) => x.messageId === m.id)) {
-				const g = t.messages.find((x) => x.id === m.replyTo), ticketId = id();
-				s.tickets[ticketId] = {
-					id: ticketId,
-					threadId: t.id,
-					messageId: m.id,
-					question: g.body,
-					context: g.context,
-					knowledgeIds: clone$2(m.knowledgeIds ?? []),
-					status: "pending",
-					createdAt: now,
-					reply: null
-				};
-			}
-		}
-		if (type === "ACCEPT" || type === "REPLY") {
-			const ticket = s.tickets[action.ticketId];
-			if (!ticket) throw Error("咨询已不存在，请刷新工作台");
-			if (type === "ACCEPT" && ticket.status === "pending") ticket.status = "processing";
-			if (type === "REPLY") {
-				if (ticket.status === "replied") throw Error("这条咨询已回复，请勿重复发送");
-				const body = text$3(action.body, "回复");
-				const m = {
-					id: id(),
-					role: "merchant",
-					body,
-					replyTo: ticket.messageId,
-					at: now
-				};
-				s.threads[ticket.threadId].messages.push(m);
-				ticket.status = "replied";
-				ticket.reply = m;
-			}
-		}
-		if (type === "SAVE_DRAFT") {
-			validateDraft(action.draft);
-			s.draft = clone$2(action.draft);
-			s.draftDirty = true;
-		}
-		if (type === "SAVE_KNOWLEDGE") {
-			const knowledgeId = action.knowledgeId ?? id(), idx = s.draft.knowledge.findIndex((x) => x.id === knowledgeId), previous = s.draft.knowledge[idx];
-			const k = {
-				...previous,
-				id: knowledgeId,
-				question: text$3(action.question, "公开问题", 200),
-				text: text$3(action.text, "公开答案"),
-				aliases: (action.aliases ?? []).map((a) => text$3(a, "相似问法", 200))
-			};
-			if (previous?.kind === "confirmation_guide") {
-				if (own$2(action, "requiresHuman") && typeof action.requiresHuman !== "boolean") throw Error("请明确选择是否仍需人工确认");
-				k.requiresHuman = own$2(action, "requiresHuman") ? action.requiresHuman : previous.requiresHuman !== false;
-			}
-			if (idx < 0) s.draft.knowledge.push(k);
-			else s.draft.knowledge[idx] = k;
-			validateDraft(s.draft);
-			s.draftDirty = true;
-		}
-		if (type === "DELETE_KNOWLEDGE") {
-			s.draft.knowledge = s.draft.knowledge.filter((k) => k.id !== action.knowledgeId);
-			s.draftDirty = true;
-		}
-		if (type === "PUBLISH") {
-			validateDraft(s.draft);
-			s.published = {
-				...clone$2(s.draft),
-				version: s.published.version + 1,
-				publishedAt: now
-			};
-			s.draftDirty = false;
-		}
-		if (type === "SET_VISIBLE") s.visible = Boolean(action.visible);
-		if (operationKey) s.operations[operationKey] = true;
-		s.revision++;
-		return s;
-	}
-	//#endregion
 	//#region src/guide.mjs
 	const GUIDE_PHASES = [
 		{
@@ -2364,12 +1937,12 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		].includes(key) || /到店|怎么走|停车|入住|接站/.test(text)) return "arrival";
 		return "during";
 	}
-	const text$2 = (value, label, max = 2e3) => {
+	const text$3 = (value, label, max = 2e3) => {
 		const result = String(value ?? "").trim();
 		if (result.length > max) throw Error(`${label}请控制在${max}字以内`);
 		return result;
 	};
-	const pending$2 = () => ({
+	const pending$3 = () => ({
 		status: "pending",
 		by: "",
 		at: ""
@@ -2381,12 +1954,12 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return n;
 	}
 	function date$1(value, label) {
-		const result = text$2(value, label, 100);
+		const result = text$3(value, label, 100);
 		if (result && !Number.isFinite(Date.parse(result))) throw Error(`${label}无效，请填写日期或ISO时间`);
 		return result || null;
 	}
 	function url(value) {
-		const raw = text$2(value, "链接", 2e3);
+		const raw = text$3(value, "链接", 2e3);
 		if (raw && !safeExternalUrl(raw)) throw Error("链接须为有效的http或https地址");
 		return raw;
 	}
@@ -2407,13 +1980,13 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			const name = `${prefix}.${key}`;
 			if (form.has(name)) next[key] = parse(form.get(name));
 		};
-		set("sourceLabel", (v) => text$2(v, "来源", 200) || "待补来源");
+		set("sourceLabel", (v) => text$3(v, "来源", 200) || "待补来源");
 		set("visibility", (v) => choice(v, [
 			"public",
 			"stay",
 			"internal"
 		], "可见范围"));
-		set("unitId", (v) => text$2(v, "适用单元", 100) || null);
+		set("unitId", (v) => text$3(v, "适用单元", 100) || null);
 		set("enabled", (v) => choice(v, ["true", "false"], "启用状态") === "true");
 		set("validFrom", (v) => date$1(v, "生效日期"));
 		set("validUntil", (v) => date$1(v, "失效日期"));
@@ -2421,7 +1994,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		if (next.validFrom && next.validUntil && Date.parse(next.validUntil) < Date.parse(next.validFrom)) throw Error("失效日期不能早于生效日期");
 		next.id = before.id;
 		next.propertyId = propertyId;
-		if (JSON.stringify(next) !== JSON.stringify(before)) next.confirmation = pending$2();
+		if (JSON.stringify(next) !== JSON.stringify(before)) next.confirmation = pending$3();
 		return next;
 	}
 	function readGuideForm(form, previousGuide, propertyId) {
@@ -2429,7 +2002,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		const previous = previousGuide ?? emptyExperience(propertyId).guide, next = structuredClone(previous);
 		next.points ??= {};
 		for (const { id } of GUIDE_POINTS) next.points[id] = editRecord(form, `point.${id}`, previous.points?.[id], id === "property" ? "property-location" : id, propertyId, {
-			address: (v) => text$2(v, "公开地址", 300),
+			address: (v) => text$3(v, "公开地址", 300),
 			lat: (v) => number$1(v, "纬度", 90),
 			lng: (v) => number$1(v, "经度", 180),
 			coordinate: (v) => choice(v, ["gaode", "wgs84"], "坐标系")
@@ -2438,8 +2011,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		next.steps = [];
 		for (let i = 0; i < stepCount; i++) {
 			const old = previous.steps?.[i], record = editRecord(form, `step.${i}`, old, `guide-step-${crypto.randomUUID()}`, propertyId, {
-				title: (v) => text$2(v, "步骤标题", 100),
-				text: (v) => text$2(v, "操作步骤"),
+				title: (v) => text$3(v, "步骤标题", 100),
+				text: (v) => text$3(v, "操作步骤"),
 				phase: (v) => choice(v, GUIDE_PHASES.map((p) => p.id), "入住阶段")
 			});
 			if (old || record.text?.trim()) next.steps.push(record);
@@ -2454,200 +2027,18 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 					"link"
 				], "媒体类型"),
 				url,
-				text: (v) => text$2(v, "媒体说明"),
-				title: (v) => text$2(v, "媒体标题", 100),
+				text: (v) => text$3(v, "媒体说明"),
+				title: (v) => text$3(v, "媒体标题", 100),
 				phase: (v) => choice(v, GUIDE_PHASES.map((p) => p.id), "媒体阶段")
 			});
 			if (old || record.url || record.text?.trim()) next.media.push(record);
 		}
 		next.contact = editRecord(form, "contact", previous.contact, "contact", propertyId, {
-			text: (v) => text$2(v, "联系说明"),
+			text: (v) => text$3(v, "联系说明"),
 			url
 		});
 		return next;
 	}
-	//#endregion
-	//#region src/guide-ui.mjs
-	const esc$4 = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
-		"&": "&amp;",
-		"<": "&lt;",
-		">": "&gt;",
-		"\"": "&quot;",
-		"'": "&#39;"
-	})[char]);
-	const source = (record) => `<p class="small muted guide-source">来源：${esc$4(record.sourceLabel || "公开资料")} · 确认：${esc$4(record.confirmation?.by || "已发布资料")} ${esc$4(record.confirmation?.at || "")}</p>`;
-	const ask$1 = (kind, id, question, label) => `<button type="button" class="text-btn guide-ask" data-action="guide-ask" data-kind="${kind}" data-id="${esc$4(id)}" data-question="${esc$4(question)}" data-label="${esc$4(label)}">带着这个问题咨询</button>`;
-	const multiline = (value) => esc$4(value).replaceAll("\n", "<br>");
-	function pointMarkup(record, key, label, propertyId, unitId) {
-		const visible = publicRecord(record, propertyId, unitId), map = visible ? guideMapUrl(record, propertyId, unitId) : "";
-		return `<article class="knowledge-item guide-point" data-guide-point="${key}"><h3>${label}</h3>${visible && record.address?.trim() ? `<p class="guide-address">${esc$4(record.address)}</p><div class="action-row">${map ? `<a class="text-btn" data-guide-navigation="${key}" href="${esc$4(map)}" target="_blank" rel="noopener noreferrer">打开地图导航</a>` : "<span class=\"small muted\">定位待补，暂不提供导航。</span>"}<button type="button" class="text-btn" data-action="guide-copy-address" data-id="${esc$4(record.id)}" data-address="${esc$4(record.address)}">复制${label}地址</button></div>${source(record)}` : "<p class=\"small muted\">此处的公开位置尚待确认，请向管家获取。不会以其他位置代替。</p>"}${ask$1("arrival", record?.id || key, `请确认${label}与到店走法。`, label)}</article>`;
-	}
-	function mediaMarkup(record) {
-		const href = safeExternalUrl(record.url), caption = record.text || record.title || "图文说明待补充";
-		let player = "";
-		if (href && record.type === "video") player = `<video class="guide-media" controls preload="none" playsinline data-guide-media="${esc$4(record.id)}" src="${esc$4(href)}">当前浏览器无法播放视频，请查看图文说明或联系管家。</video>`;
-		else if (href && record.type === "image") player = `<img class="guide-media" loading="lazy" data-guide-media="${esc$4(record.id)}" src="${esc$4(href)}" alt="${esc$4(record.title || "到店路线参考图")}" />`;
-		else if (href && record.type === "link") player = `<a class="text-btn" href="${esc$4(href)}" target="_blank" rel="noopener noreferrer" data-guide-external="${esc$4(record.id)}">打开${esc$4(record.title || "到店参考资料")} ↗</a>`;
-		return `<figure class="knowledge-item guide-media-card"><figcaption><h3>${esc$4(record.title || "到店图文与视频")}</h3><p>${multiline(caption)}</p></figcaption>${player}<p class="small muted guide-media-fallback" data-guide-media-fallback="${esc$4(record.id)}">${href ? "如视频、图片或外链加载失败，可继续按图文说明查看；仍找不到时使用下方联系出口。" : "媒体链接缺失或不可用，请按图文说明查看，或使用下方联系出口。"}</p>${source(record)}</figure>`;
-	}
-	function contactMarkup(record, propertyId, unitId) {
-		const visible = publicRecord(record, propertyId, unitId), href = visible ? safeExternalUrl(record.url) : "";
-		return `<section class="editor-group guide-contact" id="guide-contact"><h2>找不到时，联系管家</h2>${visible && record.text?.trim() ? `<p>${multiline(record.text)}</p>${href ? `<a class="text-btn" href="${esc$4(href)}" target="_blank" rel="noopener noreferrer">打开已确认联系入口 ↗</a>` : ""}${source(record)}` : "<p>本店对客联系方式与接待时段待确认。请通过原订单平台已有的商家联系入口联系管家。</p>"}${ask$1("arrival", record?.id || "contact", "我找不到入口，请管家协助确认到店路线。", "到店联系")}</section>`;
-	}
-	function arrivalMarkup(snapshot, propertyId, unitId = null) {
-		const p = publishedSnapshot(snapshot), guide = guideOf(p, propertyId), steps = publicGuideRecords(guide.steps, propertyId, unitId).filter((s) => !s.phase || s.phase === "arrival"), media = publicGuideRecords(guide.media, propertyId, unitId).filter((m) => !m.phase || m.phase === "arrival");
-		return `<section class="arrival-guide"><p class="notice">${esc$4(experienceOf(p, propertyId).dataIdentity)}。先核对入口和停车点，再打开地图；地图无法打开时可复制已公开地址。</p><section class="editor-group"><h2>如何到店</h2><p class="small muted">民宿位置、停车点和实际入口分别核对。</p>${GUIDE_POINTS.map(({ id, label }) => pointMarkup(guide.points?.[id], id, label, propertyId, unitId)).join("")}</section><section class="editor-group"><h2>下车后，最后一段路</h2>${steps.length ? `<ol class="guide-steps">${steps.map((s) => `<li><h3>${esc$4(s.title || "到店步骤")}</h3><p>${multiline(s.text)}</p>${source(s)}${ask$1("arrival", s.id, "请说明这一步：" + (s.title || s.text), "到店指引 · " + (s.title || "操作步骤"))}</li>`).join("")}</ol>` : "<p class=\"small muted\">本店路书图文、地标和夜间提示待补。请向管家核对，不按社区中心点推测房门位置。</p>"}</section><section class="editor-group"><h2>图文和视频</h2>${media.length ? media.map(mediaMarkup).join("") : "<p class=\"notice\">暂无已确认的视频或图片。已有文字说明仍可查看；需要带路时请使用下方联系出口。</p>"}</section>${contactMarkup(guide.contact, propertyId, unitId)}</section>`;
-	}
-	const factLabels = {
-		parking: "停车说明",
-		location: "位置与交通",
-		checkin: "入住与退房",
-		kitchen: "厨房规则",
-		wifi: "网络与设备使用",
-		breakfast: "早餐说明",
-		environment: "公共空间",
-		pets: "宠物规则",
-		accessibility: "通行说明",
-		barbecue: "烧烤规则",
-		price: "费用与订单说明"
-	};
-	function legacyHandbook(p, propertyId) {
-		const facts = Object.entries(p.facts ?? {}).filter(([, item]) => guestPublishedItem(item, propertyId)).map(([key, item]) => ({
-			...item,
-			id: `fact:${key}`,
-			question: factLabels[key] || key,
-			phase: handbookPhase(item, key)
-		}));
-		const knowledge = (p.knowledge ?? []).filter((item) => guestPublishedItem(item, propertyId)).map((item) => ({
-			...item,
-			phase: handbookPhase(item)
-		}));
-		return GUIDE_PHASES.map((phase) => {
-			const items = [...facts, ...knowledge].filter((item) => item.phase === phase.id);
-			return `<section class="editor-group service-phase" data-guide-phase="${phase.id}"><h2>${phase.label}</h2>${items.length ? items.map((item) => {
-				const kind = guideKind(item);
-				return `<details class="knowledge-item service-guide"><summary>${esc$4(item.question)}</summary><p class="tag">${kind.label}</p><p>${multiline(item.text)}</p><p class="small muted">来源：${esc$4(item.sourceLabel || "本店当前公开资料")} · 公开版 v${esc$4(p.version ?? 0)}</p>${ask$1("guide", item.id, item.question, item.question)}</details>`;
-			}).join("") : "<p class=\"small muted\">此阶段暂无本店公开说明，可带问题咨询管家。</p>"}</section>`;
-		}).join("");
-	}
-	function handbookMarkup(propertyId, snapshot) {
-		const p = publishedSnapshot(snapshot), guide = guideOf(p, propertyId), steps = publicGuideRecords(guide.steps, propertyId), media = publicGuideRecords(guide.media, propertyId);
-		let original = "";
-		if (propertyId === "qinghuan-dali") {
-			const knowledge = (p.knowledge ?? []).filter((item) => guestPublishedItem({
-				...item,
-				confirmation: void 0,
-				validFrom: null,
-				validUntil: null
-			}, propertyId)).map((item) => {
-				if (guestPublishedItem(item, propertyId)) return { ...item };
-				return {
-					...item,
-					requiresHuman: true,
-					text: "这道题的本店答复尚待商家确认，请向管家核对。"
-				};
-			});
-			const facts = Object.fromEntries(Object.entries(p.facts ?? {}).filter(([, item]) => guestPublishedItem(item, propertyId)));
-			const current = {
-				...p,
-				facts,
-				knowledge
-			};
-			const displayKnowledge = knowledge.map((item) => {
-				const response = answer({
-					propertyId,
-					visible: true,
-					published: current
-				}, item.question);
-				return {
-					...item,
-					text: response.body,
-					requiresHuman: response.status !== "answered"
-				};
-			});
-			original = guestHandbookMarkup(propertyId, displayKnowledge).replace(/<button class="text-btn service-ask" data-action="select-guide" data-knowledge="(Q\d{2})">[^<]*<\/button>/g, (button, id) => {
-				const item = displayKnowledge.find((k) => k.id === id);
-				return item ? `<p class="tag">${guideKind(item).label}</p>${ask$1("guide", id, item.question, `${id} · ${item.question}`)}` : "";
-			});
-		} else original = legacyHandbook(p, propertyId);
-		const extras = GUIDE_PHASES.map((phase) => {
-			const phaseSteps = steps.filter((s) => handbookPhase(s) === phase.id), phaseMedia = media.filter((m) => handbookPhase(m) === phase.id);
-			if (!phaseSteps.length && !phaseMedia.length) return "";
-			return `<section class="editor-group" data-guide-phase="${phase.id}"><h2>${phase.label} · 本店操作指引</h2>${phaseSteps.map((s) => `<article class="knowledge-item"><h3>${esc$4(s.title || "操作步骤")}</h3><p>${multiline(s.text)}</p>${source(s)}${ask$1("guide", s.id, "请说明：" + (s.title || s.text), s.title || "本店操作")}</article>`).join("")}${phaseMedia.map(mediaMarkup).join("")}</section>`;
-		}).join("");
-		return `<section class="stay-handbook"><p class="notice">入住前、入住中、退房后三阶段查找。规则说明条件，操作查看步骤；服务需求需管家确认，提交咨询不代表已办理。</p><a class="text-btn" href="#/guest/arrival">如何到店与停车 →</a>${original}${extras}</section>`;
-	}
-	const input = (prefix, key, label, value, type = "text") => `<label class="field">${label}<input type="${type}" name="${prefix}.${key}" value="${esc$4(value)}" ${type === "number" ? "step=\"any\"" : ""}/></label>`;
-	const area = (prefix, key, label, value) => `<label class="field">${label}<textarea name="${prefix}.${key}" rows="3">${esc$4(value)}</textarea></label>`;
-	const select = (prefix, key, label, value, options) => `<label class="field">${label}<select name="${prefix}.${key}">${options.map(([id, name]) => `<option value="${esc$4(id)}" ${String(value) === id ? "selected" : ""}>${esc$4(name)}</option>`).join("")}</select></label>`;
-	function metadata(prefix, record, p) {
-		const units = [
-			["", "本房源全部单元"],
-			...p.rentalMode === "whole" ? [["whole", "整院"]] : [],
-			...(p.rooms ?? []).map((room) => [room.id, room.name])
-		];
-		return `<details class="guide-record-metadata"><summary>来源、适用范围与有效期 · ${record.confirmation?.status === "confirmed" ? "已确认" : "待确认"}</summary>${input(prefix, "sourceLabel", "资料来源", record.sourceLabel)}${select(prefix, "unitId", "适用单元", record.unitId || "", units)}${select(prefix, "visibility", "可见范围", record.visibility || "public", [
-			["public", "公开访客"],
-			["stay", "仅获授权住客（本地原型不展示凭据）"],
-			["internal", "仅商家内部"]
-		])}${select(prefix, "enabled", "启用状态", record.enabled !== false ? "true" : "false", [["true", "启用"], ["false", "停用"]])}${input(prefix, "validFrom", "生效日期（可留空）", record.validFrom)}${input(prefix, "validUntil", "失效日期（可留空）", record.validUntil)}<p class="small muted">确认人：${esc$4(record.confirmation?.by || "待确认")}；确认日期：${esc$4(record.confirmation?.at || "待确认")}。修改内容或范围后须重新确认。</p></details>`;
-	}
-	function guideEditorMarkup(snapshot, propertyId) {
-		const p = snapshot?.draft ?? snapshot ?? {}, guide = experienceOf(p, propertyId).guide;
-		const steps = [...guide.steps ?? [], {}], media = [...guide.media ?? [], {}];
-		return `<form id="guide-editor-form" class="guide-editor"><h2>到店与住店指南</h2><p class="notice">修改仅保存为草稿。确认与发布另行操作，保存不会影响客人当前公开内容。请勿填写真实门锁、门禁或Wi-Fi密码、客人身份及订单资料，只写获授权后的获取方式。</p>${GUIDE_POINTS.map(({ id, label }) => {
-			const r = guide.points?.[id] ?? {}, prefix = `point.${id}`;
-			return `<fieldset class="editor-group"><legend>${label}</legend>${input(prefix, "address", "公开地址 / 地标", r.address)}${input(prefix, "lat", "纬度（无定位可留空）", r.lat, "number")}${input(prefix, "lng", "经度（无定位可留空）", r.lng, "number")}${select(prefix, "coordinate", "坐标系", r.coordinate || "gaode", [["gaode", "高德 GCJ-02"], ["wgs84", "GPS WGS84"]])}${metadata(prefix, r, p)}</fieldset>`;
-		}).join("")}<fieldset class="editor-group"><legend>图文操作步骤</legend><input type="hidden" name="steps.count" value="${steps.length}"/>${steps.map((r, i) => {
-			const prefix = `step.${i}`;
-			return `<details class="knowledge-item" ${i === steps.length - 1 ? "open" : ""}><summary>${i === steps.length - 1 ? "新增一条步骤" : esc$4(r.title || `步骤 ${i + 1}`)}</summary>${input(prefix, "title", "步骤标题", r.title)}${area(prefix, "text", "步骤说明（新增留空则不保存）", r.text)}${select(prefix, "phase", "入住阶段", r.phase || "arrival", GUIDE_PHASES.map((p) => [p.id, p.label]))}${metadata(prefix, r, p)}</details>`;
-		}).join("")}</fieldset><fieldset class="editor-group"><legend>图片、视频与外链</legend><input type="hidden" name="media.count" value="${media.length}"/>${media.map((r, i) => {
-			const prefix = `media.${i}`;
-			return `<details class="knowledge-item" ${i === media.length - 1 ? "open" : ""}><summary>${i === media.length - 1 ? "新增媒体" : esc$4(r.title || `媒体 ${i + 1}`)}</summary>${input(prefix, "title", "媒体标题", r.title)}${select(prefix, "type", "媒体类型", r.type || "video", [
-				["video", "视频"],
-				["image", "图片"],
-				["link", "外部参考链接"]
-			])}${input(prefix, "url", "公开链接（http/https）", r.url, "url")}${area(prefix, "text", "图文 / 加载失败时的说明", r.text)}${select(prefix, "phase", "入住阶段", r.phase || "arrival", GUIDE_PHASES.map((p) => [p.id, p.label]))}${metadata(prefix, r, p)}</details>`;
-		}).join("")}</fieldset><fieldset class="editor-group"><legend>迷路与服务联系出口</legend>${area("contact", "text", "联系获取方式、服务时段及非服务时段说明", guide.contact?.text)}${input("contact", "url", "获准公开的联系页面链接", guide.contact?.url, "url")}${metadata("contact", guide.contact ?? {}, p)}</fieldset><button type="submit" class="btn wide">保存指南草稿</button><p class="small muted">测试确认不代表真实店方确认。真实联系方式、定位和素材授权缺失时继续保留待补。</p></form>`;
-	}
-	//#endregion
-	//#region src/icons.mjs
-	const paths = {
-		home: "<path d=\"m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z\"/><path d=\"M9 21v-8h6v8\"/>",
-		house: "<path d=\"m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8\"/><path d=\"M17 3v4\"/>",
-		panorama: "<path d=\"M3 6c6 3 12 3 18 0v12c-6-3-12-3-18 0Z\"/><path d=\"m7 14 3-3 3 3 3-2 3 3\"/><circle cx=\"16\" cy=\"9\" r=\"1\"/>",
-		chat: "<path d=\"M21 11a8 8 0 0 1-8 8H8l-5 3v-7a8 8 0 0 1 8-12h2a8 8 0 0 1 8 8Z\"/><path d=\"M8 11h.01M12 11h.01M16 11h.01\"/>",
-		bed: "<path d=\"M3 18v3m18-3v3M3 18h18V11H3ZM5 11V5h14v6M7 11V8h4v3m2 0V8h4v3\"/>",
-		arrow: "<path d=\"M4 12h16m-6-6 6 6-6 6\"/>",
-		chevron: "<path d=\"m9 5 7 7-7 7\"/>",
-		back: "<path d=\"m15 5-7 7 7 7\"/>",
-		pin: "<path d=\"M19 9c0 6-7 12-7 12S5 15 5 9a7 7 0 0 1 14 0Z\"/><circle cx=\"12\" cy=\"9\" r=\"2.4\"/>",
-		leaf: "<path d=\"M20 3C7 2 2 8 5 15c3 7 14 6 15-12ZM4 21 15 10\"/>",
-		spark: "<path d=\"m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z\"/><path d=\"m21 2 .5 1.5L23 4l-1.5.5L21 6l-.5-1.5L19 4l1.5-.5Z\"/>",
-		parking: "<rect x=\"4\" y=\"3\" width=\"16\" height=\"18\" rx=\"3\"/><path d=\"M10 17V7h3a3 3 0 0 1 0 6h-3\"/>",
-		kitchen: "<path d=\"M4 3v6a3 3 0 0 0 6 0V3M7 3v18m12 0V3c-4 0-5 8-1 9h1\"/>",
-		clock: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>",
-		check: "<path d=\"m5 12 4 4L19 6\"/>",
-		close: "<path d=\"m6 6 12 12M6 18 18 6\"/>",
-		send: "<path d=\"m12 5 7 7m-7-7-7 7m7-7v15\"/>",
-		book: "<path d=\"M12 5v16M3 3h4a5 5 0 0 1 5 2 5 5 0 0 1 5-2h4v16h-4a5 5 0 0 0-5 2 5 5 0 0 0-5-2H3Z\"/>",
-		person: "<circle cx=\"12\" cy=\"7\" r=\"4\"/><path d=\"M4 21v-2a8 8 0 0 1 16 0v2\"/>",
-		users: "<circle cx=\"9\" cy=\"7\" r=\"3\"/><path d=\"M3 21v-3a6 6 0 0 1 12 0v3m1-17a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5v2\"/>",
-		bell: "<path d=\"M5 9a7 7 0 0 1 14 0v6l2 3H3l2-3Zm5 12h4\"/>",
-		edit: "<path d=\"m14 5 5 5M4 20l5-1L21 7l-5-5L4 14Z\"/>",
-		wifi: "<path d=\"M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-10 4a5 5 0 0 1 6 0\"/><circle cx=\"12\" cy=\"20\" r=\".6\"/>",
-		shield: "<path d=\"m12 2 8 3v6c0 6-8 11-8 11S4 17 4 11V5Z\"/><path d=\"m8 11 3 3 5-6\"/>",
-		external: "<path d=\"M14 3h7v7m0-7L10 14M10 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6\"/>",
-		plus: "<path d=\"M12 5v14M5 12h14\"/>",
-		refresh: "<path d=\"M20 7v5h-5M4 17v-5h5\"/><path d=\"M5 7a8 8 0 0 1 13-2l2 7M4 12l2 7a8 8 0 0 0 13-2\"/>",
-		expand: "<path d=\"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5\"/>",
-		image: "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"m3 16 6-6 7 7 3-3 2 2\"/><circle cx=\"16\" cy=\"8\" r=\"1\"/>",
-		more: "<circle cx=\"5\" cy=\"12\" r=\"1\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/>",
-		battery: "<rect x=\"2\" y=\"6\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M23 10v4M5 9h11v6H5Z\"/>",
-		signal: "<path d=\"M4 20v-4m5 4v-8m5 8V8m5 12V4\"/>",
-		heart: "<path d=\"M20 5a5 5 0 0 0-8 1 5 5 0 0 0-8-1c-5 5 3 12 8 16 5-4 13-11 8-16Z\"/>"
-	};
-	const icon = (name, cls = "") => `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.home}</svg>`;
 	//#endregion
 	//#region src/recommendations.mjs
 	const parties$1 = {
@@ -2666,7 +2057,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		benefit: "benefits"
 	};
 	const copy = (value) => structuredClone(value);
-	const own$1 = (value, key) => Object.hasOwn(value, key);
+	const own$2 = (value, key) => Object.hasOwn(value, key);
 	function collection(snapshot, scope, key) {
 		const values = experienceOf(snapshot, scope?.propertyId).recommendations?.[key];
 		return Array.isArray(values) ? values : [];
@@ -2777,7 +2168,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	function value(form, key, previous, fallback = "") {
 		return form.has(key) ? String(form.get(key) ?? "").trim() : String(previous?.[key] ?? fallback).trim();
 	}
-	function text$1(value, label, { required = false, max = 1e3 } = {}) {
+	function text$2(value, label, { required = false, max = 1e3 } = {}) {
 		if (required && !value || value.length > max) throw Error(`请填写${label}${required ? "" : "（可留空）"}，最多${max}字`);
 		return value;
 	}
@@ -2805,7 +2196,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		if (typeof propertyId !== "string" || !propertyId.trim()) throw Error("房源身份缺失");
 		if (previous && previous.propertyId !== propertyId) throw Error("资料不属于当前房源");
 		const kind = value(form, "kind", previous, "place");
-		if (!own$1(collections, kind)) throw Error("请选择地点、路线或权益说明");
+		if (!own$2(collections, kind)) throw Error("请选择地点、路线或权益说明");
 		if (previous?.kind && previous.kind !== kind) throw Error("不能改变现有资料类型，请另行新增");
 		const incomingId = value(form, "id", null);
 		if (incomingId && (!previous || incomingId !== previous.id)) throw Error("资料编号与当前编辑对象不一致");
@@ -2825,7 +2216,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			"booking",
 			"fee",
 			"parentPlaceId"
-		]) result[key] = text$1(value(form, key, previous), key === "name" ? "名称" : key === "sourceLabel" ? "资料来源" : "说明", {
+		]) result[key] = text$2(value(form, key, previous), key === "name" ? "名称" : key === "sourceLabel" ? "资料来源" : "说明", {
 			required: key === "name" || key === "sourceLabel",
 			max: key === "name" ? 100 : 1e3
 		});
@@ -2844,9 +2235,9 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		if (result.durationMinutes !== null && result.durationMinutes <= 0) throw Error("建议时长必须大于0分钟");
 		result.period = value(form, "period", previous);
 		if (result.period === "all") result.period = "";
-		if (result.period && !own$1(periods$1, result.period)) throw Error("请选择半天或一天");
+		if (result.period && !own$2(periods$1, result.period)) throw Error("请选择半天或一天");
 		result.party = [...new Set(form.getAll("party").map(String))];
-		if (result.party.some((item) => !own$1(parties$1, item))) throw Error("同行偏好选项不正确");
+		if (result.party.some((item) => !own$2(parties$1, item))) throw Error("同行偏好选项不正确");
 		result.sourceUrl = value(form, "sourceUrl", previous);
 		if (result.sourceUrl && !safeExternalUrl(result.sourceUrl)) throw Error("来源链接请填写http或https网址");
 		result.validFrom = date(form, "validFrom", previous);
@@ -2874,152 +2265,6 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			at: ""
 		};
 		return result;
-	}
-	//#endregion
-	//#region src/recommendations-ui.mjs
-	const esc$3 = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
-		"&": "&amp;",
-		"<": "&lt;",
-		">": "&gt;",
-		"\"": "&quot;",
-		"'": "&#39;"
-	})[char]);
-	const periods = [
-		["all", "时间不限"],
-		["half", "半天"],
-		["day", "一天"]
-	];
-	const parties = [
-		["all", "同行不限"],
-		["family", "亲子同行"],
-		["couple", "两人同行"],
-		["senior", "长辈同行"],
-		["solo", "独自出行"]
-	];
-	const kinds = {
-		place: "地点",
-		route: "路线",
-		benefit: "权益说明"
-	};
-	const libraryButton = () => "<button class=\"btn secondary wide\" data-action=\"show-content-library\">完整资料搜索 · 85条记录与5条主题路线</button>";
-	const duration = (item) => Number.isFinite(item.durationMinutes) && item.durationMinutes > 0 ? `建议${item.durationMinutes}分钟` : "建议时长待补充";
-	const identity = (snapshot, item = {}) => {
-		const label = item.dataIdentity || snapshot.experience?.dataIdentity || "资料身份待确认";
-		return `<span class="tag">${esc$3(label)}${/测试|原型/.test(label) || /测试/.test(item.confirmation?.by || "") ? " · 演示确认" : ""}</span>`;
-	};
-	const unavailable$1 = () => `<div class="page-pad empty-state"><h1 class="page-title">这条推荐暂不可用</h1><p>未找到当前房源范围内已确认且仍有效的资料，请返回周边推荐重新选择。</p><button class="btn secondary wide" data-action="nav" data-route="guest/life">返回周边推荐</button></div>`;
-	function sourceMarkup(item, snapshot) {
-		const url = safeExternalUrl(item.sourceUrl);
-		return `<section class="content-section"><h2>资料来源</h2><p>${esc$3(item.sourceLabel || "来源待补充")}</p>${url ? `<a class="text-btn" href="${esc$3(url)}" target="_blank" rel="noopener noreferrer">查看原始来源 ${icon("external")}</a>` : ""}<p class="small muted">${esc$3(item.confirmation?.by || "确认人待补充")} · ${esc$3(item.confirmation?.at || "确认日期待补充")} · 公开资料 V${esc$3(snapshot.version ?? 0)}</p></section>`;
-	}
-	function navigationMarkup(item, scope) {
-		const nav = recommendationNavigation(item, scope);
-		return `<section class="content-section"><h2>位置与导航</h2><p>${esc$3(nav.address || "具体地址待补充，请向管家确认。")}</p>${nav.available && nav.url ? `<a class="btn secondary wide" href="${esc$3(nav.url)}" target="_blank" rel="noopener noreferrer">打开已确认地点导航 ${icon("external")}</a>` : "<p class=\"notice\">定位尚待核验，暂不提供导航入口。</p>"}${nav.address ? `<label class="field">地址可复制<input readonly aria-label="可复制的推荐地址" value="${esc$3(nav.address)}"></label><button class="text-btn" data-action="copy-recommendation-address" data-address="${esc$3(nav.address)}">复制地址</button>` : ""}<p class="small muted">导航无法打开时，可复制地址到地图中查询；实际出行前请确认开放及交通情况。</p></section>`;
-	}
-	function factsMarkup(item, snapshot, scope) {
-		return `<dl class="detail-grid"><div><dt>建议时长</dt><dd>${esc$3(duration(item))}</dd></div><div><dt>适用安排</dt><dd>${esc$3(periods.find(([id]) => id === item.period)?.[1] || "适用时段待确认")}</dd></div><div><dt>交通</dt><dd>${esc$3(recommendationTransport(item, snapshot, scope))}</dd></div><div><dt>预约</dt><dd>${esc$3(item.bookingConfirmed === true ? item.booking || "已核验，详细预约说明待补充" : "预约方式待核验，请出行前向场所确认。")}</dd></div><div><dt>费用</dt><dd>${esc$3(item.feeConfirmed === true ? item.fee || "费用已核验，详细价目待补充" : "费用待核验，原稿价格不作为当前报价。")}</dd></div></dl>`;
-	}
-	const askButton = (kind, id) => `<button class="btn wide" data-action="recommendation-ask" data-kind="${kind}" data-id="${esc$3(id)}">${icon("spark")} 带着这${kind === "route" ? "条路线" : "个地点"}问管家</button>`;
-	function recommendationRow(item, kind, snapshot, filters) {
-		return `<button class="content-row" data-action="recommendation-${kind}" data-id="${esc$3(item.id)}"><span>${identity(snapshot, item)}<strong>${esc$3(item.name)}</strong><span>${esc$3(recommendationReason(item, filters))}</span><small>${esc$3(duration(item))} · ${esc$3(item.address || "位置待补充")}</small><small>费用${item.feeConfirmed === true ? "已核验" : "待核验"} · 预约${item.bookingConfirmed === true ? "已核验" : "待核验"}</small></span>${icon("chevron")}</button>`;
-	}
-	function recommendationsMarkup(snapshot, scope, filters = {}) {
-		const selected = selectRecommendations(snapshot, scope, filters), current = selected.filters || filters;
-		const picks = selected.places.length || selected.routes.length;
-		return `<div class="page-pad recommendations-page"><h1 class="page-title">周边推荐</h1><form id="recommendation-filter" class="content-search"><label class="field">可以安排多久<select name="period">${periods.map(([id, label]) => `<option value="${id}" ${current.period === id ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="field">和谁一起去<select name="party">${parties.map(([id, label]) => `<option value="${id}" ${current.party === id ? "selected" : ""}>${label}</option>`).join("")}</select></label><button class="btn secondary wide" type="submit">看看适合的安排</button></form>${picks ? `${selected.places.length ? `<section class="content-section"><h2>精选地点</h2><div class="content-list">${selected.places.map((item) => recommendationRow(item, "place", snapshot, current)).join("")}</div></section>` : ""}${selected.routes.length ? `<section class="content-section"><h2>适合这次出行的路线</h2><div class="content-list">${selected.routes.map((item) => recommendationRow(item, "route", snapshot, current)).join("")}</div></section>` : ""}` : `<div class="empty-state"><h2>暂无已核实推荐</h2><p>${esc$3(selected.emptyReason || "当前没有符合时间与同行偏好的已确认公开资料，管家补充并发布后会显示在这里。")}</p></div>`}${libraryButton()}<p class="small muted">原稿资料保留来源与待核验说明；原稿中的价格、营业与预约线索需另行确认。</p></div>`;
-	}
-	function recommendedPlaceMarkup(id, snapshot, scope) {
-		const place = recommendedPlaceById(id, snapshot, scope);
-		if (!place) return unavailable$1();
-		const benefits = recommendationBenefits(snapshot, scope, place.id);
-		return `<div class="page-pad content-detail"><h1 class="page-title">${esc$3(place.name)}</h1>${identity(snapshot, place)}<p>${esc$3(place.description || "地点介绍待补充。")}</p>${place.parentPlaceId ? "<p class=\"notice\">此条为场所内的子空间，开放范围与使用资格以该空间说明为准。</p>" : ""}${factsMarkup(place, snapshot, scope)}${navigationMarkup(place, scope)}${benefits.length ? `<section class="content-section"><h2>相关权益说明</h2>${benefits.map((item) => `<article class="knowledge-item"><h3>${esc$3(item.name)}</h3><p>${esc$3(item.description || "使用条件请向场所确认。")}</p>${identity(snapshot, item)}<p class="small muted">来源：${esc$3(item.sourceLabel || "来源待补充")}</p></article>`).join("")}</section>` : ""}${askButton("place", place.id)}${sourceMarkup(place, snapshot)}<p class="content-disclaimer">本页只说明资料，没有发起预约或服务申请。</p></div>`;
-	}
-	function recommendedRouteMarkup(id, snapshot, scope) {
-		const route = recommendedRouteById(id, snapshot, scope);
-		if (!route) return unavailable$1();
-		const stops = route.placeIds.map((placeId) => recommendedPlaceById(placeId, snapshot, scope));
-		return `<div class="page-pad content-detail"><h1 class="page-title">${esc$3(route.name)}</h1>${identity(snapshot, route)}<p>${esc$3(route.description || "路线说明待补充。")}</p><p class="notice">此路线按自身${route.period === "half" ? "半天" : route.period === "day" ? "一天" : "已确认"}安排展示，请结合往返交通和同行体力核实。</p>${factsMarkup(route, snapshot, scope)}<section class="content-section"><h2>路线中的地点</h2><ol class="content-itinerary">${stops.map((place) => `<li><button class="content-stop" data-action="recommendation-place" data-id="${esc$3(place.id)}"><strong>${esc$3(place.name)}</strong>${icon("chevron")}</button><p>${esc$3(place.address || "地点地址待补充")} · ${esc$3(duration(place))}</p></li>`).join("")}</ol></section>${navigationMarkup(route, scope)}${askButton("route", route.id)}${sourceMarkup(route, snapshot)}<p class="content-disclaimer">路线建议不代表各站已预约；未核实的费用与开放条件仍需出行前确认。</p></div>`;
-	}
-	const localDateValue = (value) => {
-		if (!value) return "";
-		const date = new Date(value);
-		return Number.isFinite(+date) ? (/* @__PURE__ */ new Date(+date - date.getTimezoneOffset() * 6e4)).toISOString().slice(0, 16) : "";
-	};
-	const textField = (name, label, value = "", type = "text") => `<label class="field">${label}<input name="${name}" type="${type}" value="${esc$3(type === "datetime-local" ? localDateValue(value) : value)}" ${type === "number" ? "step=\"any\"" : ""}></label>`;
-	const checkField = (name, label, checked) => `<label class="field"><span><input type="checkbox" name="${name}" ${checked ? "checked" : ""}> ${label}</span></label>`;
-	function recommendationEditorMarkup(snapshot, pid, { kind = "place", id = null } = {}) {
-		if (!Object.hasOwn(kinds, kind)) kind = "place";
-		const content = experienceOf(snapshot, pid).recommendations;
-		const record = id ? content[kind === "place" ? "places" : kind === "route" ? "routes" : "benefits"].find((item) => item.id === id && item.propertyId === pid) : null;
-		if (id && !record) return "<div class=\"empty-state\"><h2>这条维护资料不存在</h2><p>请返回当前房源的推荐清单重新选择。</p></div>";
-		const r = record || {
-			enabled: true,
-			visibility: "public",
-			party: [],
-			period: "half"
-		};
-		return `<section class="recommendation-editor"><h2>精选与来源维护</h2><p class="notice">保存后成为待确认草稿；测试确认不会代表真实经营方核验，公开发布另行操作。</p>${Object.entries(kinds).map(([itemKind, label]) => {
-			return `<section class="editor-group"><h2>${label}资料</h2>${(content[itemKind === "place" ? "places" : itemKind === "route" ? "routes" : "benefits"] || []).filter((item) => item.propertyId === pid).map((item) => `<button class="fact-row" data-action="edit-recommendation" data-kind="${itemKind}" data-id="${esc$3(item.id)}"><span>${esc$3(item.name || "名称待补充")} · ${item.enabled === false ? "已停用" : item.confirmation?.status === "confirmed" ? "已确认草稿" : "待确认"}</span>${icon("chevron")}</button>`).join("")}<button class="text-btn" data-action="new-recommendation" data-kind="${itemKind}">${icon("plus")} 新增${label}</button></section>`;
-		}).join("")}<form id="recommendation-form"><input type="hidden" name="id" value="${esc$3(r.id || "")}"><label class="field">资料类型<select name="kind">${Object.entries(kinds).map(([key, label]) => `<option value="${key}" ${key === kind ? "selected" : ""}>${label}</option>`).join("")}</select></label>${textField("name", "名称", r.name)}<label class="field">介绍与适用条件<textarea name="description" maxlength="1000">${esc$3(r.description || "")}</textarea></label>${textField("address", "地点或路线位置", r.address)}${textField("lat", "已核实定位纬度（未核留空）", r.lat ?? "", "number")}${textField("lng", "已核实定位经度（未核留空）", r.lng ?? "", "number")}${textField("durationMinutes", "建议时长（分钟）", r.durationMinutes ?? "", "number")}<label class="field">适用时长<select name="period">${periods.filter(([key]) => key !== "all").map(([key, label]) => `<option value="${key}" ${key === r.period ? "selected" : ""}>${label}</option>`).join("")}</select></label><fieldset class="editor-group"><legend>适合同伴（只勾选已了解的条件）</legend>${parties.filter(([key]) => key !== "all").map(([key, label]) => `<label><input type="checkbox" name="party" value="${key}" ${(r.party || []).includes(key) ? "checked" : ""}> ${label}</label>`).join("")}</fieldset>${textField("transport", "交通说明", r.transport)}${checkField("transportConfirmed", "交通说明已逐项核验", r.transportConfirmed === true)}${textField("booking", "预约方式", r.booking)}${checkField("bookingConfirmed", "预约方式已逐项核验", r.bookingConfirmed === true)}${textField("fee", "费用及计价条件", r.fee)}${checkField("feeConfirmed", "费用及单位已逐项核验", r.feeConfirmed === true)}${textField("sourceLabel", "资料来源", r.sourceLabel)}${textField("sourceUrl", "原始来源网址（选填）", r.sourceUrl, "url")}${textField("unitId", "仅适用出租单元ID（留空为本房源）", r.unitId)}${textField("placeIds", "路线站点或权益适用地点ID（逗号分隔）", (r.placeIds || [r.placeId].filter(Boolean)).join(","))}${textField("parentPlaceId", "所属场所ID（子空间选填）", r.parentPlaceId)}<label class="field">可公开范围<select name="visibility">${[
-			["public", "公开资料"],
-			["resident", "入住专属"],
-			["internal", "内部资料"]
-		].map(([key, label]) => `<option value="${key}" ${key === r.visibility ? "selected" : ""}>${label}</option>`).join("")}</select></label>${textField("validFrom", "生效时间（选填）", r.validFrom || "", "datetime-local")}${textField("validUntil", "失效时间（选填）", r.validUntil || "", "datetime-local")}${checkField("enabled", "启用此条资料", r.enabled !== false)}${checkField("cancelled", "活动已取消／权益已取消", r.cancelled === true)}<button class="btn secondary wide" type="submit">保存推荐草稿</button></form></section>`;
-	}
-	//#endregion
-	//#region src/property-ui.mjs
-	const esc$2 = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
-		"&": "&amp;",
-		"<": "&lt;",
-		">": "&gt;",
-		"\"": "&quot;",
-		"'": "&#39;"
-	})[c]);
-	const button = (label, route) => `<button class="btn secondary" data-action="nav" data-route="${route}">${label}</button>`;
-	const field = (label, name, value = "", required = true) => `<label class="field">${label}<input name="${name}" value="${esc$2(value)}" maxlength="100" ${required ? "required" : ""}></label>`;
-	function propertyFormMarkup() {
-		return `<div class="page-pad"><h1 class="page-title">新增房源</h1><p class="notice">本阶段使用测试资料。真实房源、规则和媒体须由授权人确认，新增不会自动对客发布。</p><form id="new-property-form">${field("房源名称", "name")}${field("位置与地区", "location")}<label class="field">出租方式<select name="rentalMode"><option value="pending">待确认</option><option value="room">按间出租</option><option value="whole">整院包栋</option></select></label><label class="field">城市<select name="city"><option value="pending">地区待确认</option><option value="dali">大理</option><option value="moganshan">莫干山</option></select></label><button class="btn wide" type="submit">创建房源草稿</button></form></div>`;
-	}
-	function unitManagerMarkup(state) {
-		const d = state.draft;
-		return `<div class="page-pad"><h1 class="page-title">房间与公共空间</h1><p class="notice">${esc$2(d.name)} · 以下为草稿，保存不会改变客人端。停用与出租方式变更需确认发布后生效。</p><form id="rental-mode-form"><label class="field">出租方式<select name="rentalMode">${[
-			["pending", "待确认"],
-			["room", "按间出租"],
-			["whole", "整院包栋"]
-		].map(([k, v]) => `<option value="${k}" ${d.rentalMode === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>${field("整院建议入住人数", "wholeCapacity", d.wholeCapacity || "", false)}<button class="btn secondary wide">保存出租方式草稿</button></form><div class="section-title"><h2>卧室 · ${d.rooms.length}</h2></div>${button("新增房间", "merchant/room-edit/new")}${d.rooms.map((r) => `<article class="knowledge-item"><h3>${esc$2(r.name)} · ${r.enabled === false ? "已停用（草稿）" : "启用"}</h3><p>${esc$2(r.beds)} · ${esc$2(r.capacity)}</p>${button("编辑房间", "merchant/room-edit/" + r.id)}</article>`).join("")}${!d.rooms.length ? "<p class=\"notice\">尚未填写房间，不会自动复制示例卧室。</p>" : ""}<div class="section-title"><h2>公共空间</h2></div>${button("新增公共空间", "merchant/space-edit/new")}${(d.spaces || []).map((r) => `<article class="knowledge-item"><h3>${esc$2(r.name)} · ${r.enabled === false ? "已停用（草稿）" : "启用"}</h3>${button("编辑空间", "merchant/space-edit/" + r.id)}</article>`).join("")}<div class="section-title"><h2>检查并发布</h2></div>${button("返回民宿资料", "merchant/editor")}</div>`;
-	}
-	function roomFormMarkup(state, id) {
-		const r = id === "new" ? {
-			name: "",
-			type: "",
-			floor: "",
-			area: "",
-			beds: "",
-			capacity: "",
-			bath: "",
-			description: "",
-			facilities: []
-		} : state.draft.rooms.find((r) => r.id === id);
-		if (!r) return "<div class=\"page-pad\"><p>房间不存在，请返回重新选择。</p></div>";
-		return `<div class="page-pad"><h1 class="page-title">${id === "new" ? "新增房间" : "编辑房间"}</h1><form id="unit-room-form" data-id="${esc$2(id)}">${[
-			["name", "房间名称"],
-			["type", "房型"],
-			["floor", "所在楼层"],
-			["area", "面积"],
-			["beds", "床型"],
-			["capacity", "建议入住人数"],
-			["bath", "卫浴"]
-		].map(([k, l]) => field(l, k, r[k] || "")).join("")}${field("设施（逗号分隔）", "facilities", (r.facilities || []).join("，"), false)}<label class="field">房间介绍<textarea name="description" maxlength="500">${esc$2(r.description)}</textarea></label><label class="field">状态<select name="enabled"><option value="true" ${r.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${r.enabled === false ? "selected" : ""}>停用</option></select></label><button class="btn wide" type="submit">保存房间草稿</button></form></div>`;
-	}
-	function spaceFormMarkup(state, id) {
-		const r = id === "new" ? {} : state.draft.spaces?.find((r) => r.id === id);
-		if (!r) return "<div class=\"page-pad\">空间不存在，请返回重新选择。</div>";
-		return `<div class="page-pad"><h1 class="page-title">${id === "new" ? "新增公共空间" : "编辑公共空间"}</h1><form id="unit-space-form" data-id="${esc$2(id)}">${field("空间名称", "name", r.name || "")}<label class="field">规则分类<select name="key">${[
-			["environment", "公共环境"],
-			["kitchen", "厨房"],
-			["parking", "停车"],
-			["wifi", "网络设施"]
-		].map(([k, l]) => `<option value="${k}" ${r.key === k ? "selected" : ""}>${l}</option>`).join("")}</select></label><label class="field">空间说明<textarea name="description" maxlength="500">${esc$2(r.description)}</textarea></label><label class="field">状态<select name="enabled"><option value="true" ${r.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${r.enabled === false ? "selected" : ""}>停用</option></select></label><button class="btn wide" type="submit">保存公共空间草稿</button></form></div>`;
 	}
 	//#endregion
 	//#region src/qinghuan-content.json
@@ -5614,7 +4859,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	};
 	//#endregion
 	//#region src/content.mjs
-	const norm = (value) => String(value ?? "").normalize("NFKC").replace(/[\s·，,。？?！!、]/g, "").toLowerCase();
+	const norm$2 = (value) => String(value ?? "").normalize("NFKC").replace(/[\s·，,。？?！!、]/g, "").toLowerCase();
 	const scoped = ({ propertyId, cityId } = {}) => propertyId === "qinghuan-dali" && cityId === "dali";
 	const contentFor = (propertyId, cityId) => scoped({
 		propertyId,
@@ -5623,8 +4868,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	function findPlaces({ propertyId, cityId, category = "all", query = "" } = {}) {
 		const c = contentFor(propertyId, cityId);
 		if (!c) return [];
-		const q = norm(query);
-		return c.places.filter((p) => (category === "all" || p.category === category) && (!q || norm([
+		const q = norm$2(query);
+		return c.places.filter((p) => (category === "all" || p.category === category) && (!q || norm$2([
 			p.name,
 			...p.aliases ?? [],
 			p.summary,
@@ -5653,7 +4898,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		if (!context || context.propertyId !== scope?.propertyId || context.cityId !== scope?.cityId) return null;
 		return makeContentContext(context.kind, context.id, scope);
 	}
-	const lifeChatKey = (sessionId, cityId, propertyId) => `${sessionId}:${cityId}${propertyId === "qinghuan-dali" ? ":qinghuan-dali" : ""}`;
+	const lifeChatKey = (sessionId, cityId, propertyId, unitId = null) => `${sessionId}:${cityId}:${propertyId || "unscoped"}${unitId ? ":" + unitId : ""}`;
 	const previewCopy = (value) => String(value ?? "").replace(/\d+(?:[—\-~～/]\d+)*(?:\.\d+)?\s*元(?:\/人)?/g, "费用待确认").replace(/(?:24小时营业|24h营业|24H营业)/g, "营业时段待确认");
 	function publicContentNotes(item) {
 		const text = (item.notes ?? []).join(" "), notes = [];
@@ -5692,12 +4937,12 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return `${l.title}\n原稿时间线索：${l.frequency || "不定期，待发布方确认"}${l.locationText ? `\n原稿场地：${previewCopy(l.locationText)}` : ""}\n当期日期、起止时刻、费用、预约和取消状态未核实；这是一条活动来源线索，不能确定今天有场次或可报名。`;
 	}
 	function mentions(q, kind, items) {
-		const text = norm(q);
+		const text = norm$2(q);
 		return items.filter((item) => [
 			item.name || item.title,
 			...item.aliases ?? [],
 			...kind === "route" ? item.title.split("·").filter((s) => s.length >= 4) : []
-		].some((name) => norm(name).length >= 2 && text.includes(norm(name))));
+		].some((name) => norm$2(name).length >= 2 && text.includes(norm$2(name))));
 	}
 	function answerContent(question, scope = {}) {
 		if (!scoped(scope)) return null;
@@ -5721,9 +4966,9 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		const activityMatches = mentions(topic, "activity-lead", qinghuan_content_default.activityLeads);
 		const routeMatches = mentions(topic, "route", qinghuan_content_default.routes);
 		const activityQuestion = /活动|场次|报名|今天|明天|本周|周末|市集|集市|火把节|脱口秀/.test(topic);
-		const activityNames = new Set(activityMatches.map((l) => norm(l.title)));
+		const activityNames = new Set(activityMatches.map((l) => norm$2(l.title)));
 		let selected = [
-			...mentions(topic, "place", qinghuan_content_default.places).filter((p) => !(activityQuestion && [p.name, ...p.aliases ?? []].some((name) => activityNames.has(norm(name))))).map((item) => ({
+			...mentions(topic, "place", qinghuan_content_default.places).filter((p) => !(activityQuestion && [p.name, ...p.aliases ?? []].some((name) => activityNames.has(norm$2(name))))).map((item) => ({
 				kind: "place",
 				item
 			})),
@@ -5737,7 +4982,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			})) : []
 		];
 		const original = validContentContext(scope.context, scope);
-		const followUp = norm(topic).replace(/^(?:请问|那么|那(?=怎么|多少|需要|要|预约|几点|价格|费用|营业)|还想问|想了解|想知道)/, "").replace(/这个地点|这个地方|这家店|这条路线|这条活动线索|这家|那家|这里|它|多少钱|怎么样|好不好|什么时候|几点|怎么预约|怎么去|怎么走|要提前预约|需要预约|能预约|要预约|预约|有名额|有什么需要留意|有什么注意|有什么|留意|适合|人群|价格|费用|人均|营业|开放|提前|需要|请问|是否|可以|要|吗|呢|呀|啊|的/g, "").replace(/带孩子|带娃|孩子|只有|半天|下雨了|下雨|雨天|不想爬山|不爬山|怎么安排|怎么办|我们|出行|安排|合适|亲子|长辈|老人|爬山|去玩|的话|我/g, "").length === 0 || /^(?:请问|那|还想问|想了解|想知道)?(?:这个地点|这家店|这条路线|这条活动线索|这里|它|半天|下雨|雨天|不想爬|不爬)/.test(topic);
+		const followUp = norm$2(topic).replace(/^(?:请问|那么|那(?=怎么|多少|需要|要|预约|几点|价格|费用|营业)|还想问|想了解|想知道)/, "").replace(/这个地点|这个地方|这家店|这条路线|这条活动线索|这家|那家|这里|它|多少钱|怎么样|好不好|什么时候|几点|怎么预约|怎么去|怎么走|要提前预约|需要预约|能预约|要预约|预约|有名额|有什么需要留意|有什么注意|有什么|留意|适合|人群|价格|费用|人均|营业|开放|提前|需要|请问|是否|可以|要|吗|呢|呀|啊|的/g, "").replace(/带孩子|带娃|孩子|只有|半天|下雨了|下雨|雨天|不想爬山|不爬山|怎么安排|怎么办|我们|出行|安排|合适|亲子|长辈|老人|爬山|去玩|的话|我/g, "").length === 0 || /^(?:请问|那|还想问|想了解|想知道)?(?:这个地点|这家店|这条路线|这条活动线索|这里|它|半天|下雨|雨天|不想爬|不爬)/.test(topic);
 		if (!selected.length && original && !reset && followUp) selected = [{
 			kind: original.kind,
 			item: lookups[original.kind](original.id, scope)
@@ -5803,6 +5048,1332 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		].join("\n\n"));
 	}
 	//#endregion
+	//#region src/experience-answer.mjs
+	const scopePropertyId = (state) => state.published.experience?.propertyId ?? state.propertyId;
+	const clone$3 = (value) => structuredClone(value);
+	const norm$1 = (value) => String(value ?? "").normalize("NFKC").replace(/[\s·，,。？?！!、；;]/g, "").toLowerCase();
+	const originalGuides = new Map(QINGHUAN_QUESTIONS.map((item) => [item.id, item]));
+	const unavailable$2 = (body) => ({
+		status: "unavailable",
+		body,
+		sources: [],
+		knowledgeIds: [],
+		context: null
+	});
+	const pending$2 = (body) => ({
+		status: "needs_human",
+		body,
+		sources: [],
+		knowledgeIds: [],
+		mode: "local",
+		context: null
+	});
+	const publicStatus = (item) => ![
+		"pending",
+		"draft",
+		"unconfirmed",
+		"disabled",
+		"cancelled",
+		"ended",
+		"expired"
+	].includes(item?.status);
+	function answerKind(question) {
+		const affirmative = String(question).replace(/(?:不用|不需要|不要|不申请)[^，,。；;！？?!]*/g, "");
+		if (/(?:帮(?:我|我们)?|请|我要|我想|我们想|需要)(?:安排|预约|预订|报名|派|报修|维修|叫车|订车|接站|送站|补扫|清扫|寄回|退款|退押金)|坏了|故障|失灵|漏水|停水|停电|跳闸|冒烟|连不上|连接失败|断网|网速慢|忽冷忽热|不出热水|不制冷|不制热|无法启动|开不了|没反应|热水.{0,8}(?:不热|太冷|太烫)/.test(affirmative)) return "request";
+		if (/怎么|如何|操作|使用|步骤|教程|视频|找不到|怎么走/.test(question)) return "operation";
+		return "rule";
+	}
+	function originalGuideQuestion(p, question) {
+		const q = norm$1(question);
+		return (p.knowledge ?? []).some((item) => item.kind === "confirmation_guide" && [item.question, ...item.aliases ?? []].some((value) => norm$1(value) === q));
+	}
+	function contextIssue(state, context) {
+		if (!context) return null;
+		const pid = scopePropertyId(state), p = state.published;
+		if (Object.hasOwn(context, "propertyId") && context.propertyId !== pid) return unavailable$2("这个对象不属于当前民宿，不能引用。请返回当前房源重新选择。");
+		if (([
+			"arrival",
+			"guide",
+			"place",
+			"route",
+			"activity-lead"
+		].includes(context.kind) || context.collection === "recommendations") && context.propertyId !== pid) return unavailable$2("对象的房源归属缺失或不一致，请返回当前房源重新选择。");
+		if (context.unitId) {
+			if (!(context.unitId === "whole" ? p.rentalMode === "whole" : p.rentalMode !== "whole" && (p.rooms ?? []).some((room) => room.id === context.unitId && room.enabled !== false))) return unavailable$2("这个出租单元已失效或不属于当前民宿，请通过当前房源重新选择。");
+		}
+		if (context.roomId && context.unitId && context.unitId !== "whole" && context.roomId !== context.unitId) return unavailable$2("所选房间与当前出租单元不一致，请重新选择。");
+		if (context.roomId && !(p.rooms ?? []).some((room) => room.id === context.roomId && room.enabled !== false)) return {
+			status: "needs_clarification",
+			body: "这个房间不在本民宿当前公开资料中，请重新选择房间。",
+			sources: [],
+			knowledgeIds: [],
+			context: null
+		};
+		return null;
+	}
+	function visiblePublishedItem(item, propertyId, unitId = null) {
+		return publicStatus(item) && guestPublishedItem(item, propertyId, unitId);
+	}
+	function answerState(state, context = null) {
+		const unitId = context?.unitId ?? null, p = state.published;
+		const facts = Object.fromEntries(Object.entries(p.facts ?? {}).filter(([, item]) => visiblePublishedItem(item, scopePropertyId(state), unitId)));
+		const knowledge = (p.knowledge ?? []).flatMap((item) => {
+			if (visiblePublishedItem(item, scopePropertyId(state), unitId)) return [item];
+			const original = originalGuides.get(item.id);
+			const structural = {
+				...item,
+				confirmation: void 0,
+				validFrom: null,
+				validUntil: null,
+				status: void 0
+			};
+			if (original && item.kind === "confirmation_guide" && guestPublishedItem(structural, scopePropertyId(state), unitId)) return [{
+				...item,
+				requiresHuman: true,
+				text: original.text,
+				confirmationChecklist: original.confirmationChecklist,
+				sourceLabel: original.sourceLabel,
+				sourceRange: original.sourceRange
+			}];
+			return [];
+		});
+		return {
+			...state,
+			published: {
+				...p,
+				facts,
+				knowledge
+			}
+		};
+	}
+	function guideEntry(state, context) {
+		const p = state.published, pid = scopePropertyId(state), unit = context.unitId ?? null, guide = experienceOf(p, pid).guide;
+		if (!guide) return null;
+		const labels = {
+			property: "民宿位置",
+			parking: "停车点",
+			entrance: "实际入口"
+		};
+		for (const [key, record] of Object.entries(guide.points ?? {})) if (context.id === record?.id || context.id === key) return publicRecord(record, pid, unit) ? {
+			record,
+			label: labels[key] || key,
+			type: "point",
+			key,
+			scopes: /* @__PURE__ */ new Set(["location", ...key === "parking" ? ["parking"] : []])
+		} : null;
+		for (const record of [
+			...guide.steps ?? [],
+			...guide.media ?? [],
+			guide.contact
+		].filter(Boolean)) if (record.id === context.id) return publicRecord(record, pid, unit) ? {
+			record,
+			label: record.title || (record.id === "contact" ? "到店联系" : "入住指引"),
+			type: guide.contact === record ? "contact" : "guide",
+			scopes: requestedScopes([record.title, record.text].join("；"))
+		} : null;
+		if (context.kind === "guide" && String(context.id).startsWith("fact:")) {
+			const key = context.id.slice(5), record = p.facts?.[key];
+			if (record && visiblePublishedItem(record, pid, unit)) return {
+				record: {
+					...record,
+					id: context.id
+				},
+				label: {
+					parking: "停车说明",
+					kitchen: "厨房规则",
+					checkin: "入住与退房",
+					wifi: "网络与设备使用",
+					location: "位置与交通"
+				}[key] || key,
+				type: "fact",
+				key,
+				scopes: factScopes(key, record.text)
+			};
+		}
+		const item = (p.knowledge ?? []).find((item) => item.id === context.id);
+		if (context.kind === "guide" && item && visiblePublishedItem(item, pid, unit)) return {
+			record: item,
+			label: item.question,
+			type: "knowledge",
+			scopes: requestedScopes(item.question + "；" + item.text)
+		};
+		return null;
+	}
+	function source$1(record, label, text, p, group, kind) {
+		return {
+			key: `${group}:${kind}:${record.id}`,
+			label,
+			text,
+			version: p.version,
+			sourceLabel: record.sourceLabel || "本店当前公开资料",
+			sourceVersion: record.sourceVersion ?? record.version ?? null,
+			reference: {
+				collection: group,
+				kind,
+				id: record.id,
+				sourceLabel: record.sourceLabel || "本店当前公开资料",
+				sourceRefs: clone$3(record.sourceRefs ?? [])
+			},
+			...record.confirmation ? { confirmation: clone$3(record.confirmation) } : {}
+		};
+	}
+	function extraGuideQuestions(question, scopes) {
+		const extras = [...requestedScopes(question)].filter((scope) => !scopes.has(scope));
+		const unknown = String(question).split(/另外|还有|顺便|以及|并且|同时/).slice(1).filter((part) => /吗|能|可以|是否|提供|安排|帮/.test(part) && !requestedScopes(part).size);
+		return [...extras.map((scope) => ({
+			"crib": "婴儿床",
+			"extra-bed": "加床服务",
+			kitchen: "厨房规则",
+			pets: "宠物规则",
+			breakfast: "早餐",
+			booking: "价格与预订",
+			pickup: "接站",
+			dropoff: "送站与叫车"
+		})[scope] || scope), ...unknown.map((part) => `“${part.trim()}”`)];
+	}
+	function guideAnswer(state, question, context) {
+		const entry = guideEntry(state, context);
+		if (!entry) return unavailable$2("这项指南内容尚未公开确认、已停用或不适用于当前单元。请重新选择或请管家确认。");
+		const { record, label, type, scopes } = entry, p = state.published;
+		const text = type === "point" ? `${label}：${record.address || "详细地址待补充。"}` : record.text || "这项资料的图文说明待补充，请向管家确认。";
+		const url = safeExternalUrl(record.url), media = url ? `\n资料入口：${url}（若无法加载，请使用已有图文或联系管家）` : "";
+		const extras = extraGuideQuestions(question, scopes), request = answerKind(question) === "request";
+		return {
+			body: [
+				`${label}\n${text}${media}`,
+				extras.length ? `额外诉求 ${extras.join("、")} 尚未由本项指南确认，请管家分别核对。` : "",
+				request ? "这是服务需求或故障咨询，需要人工核对和处理；当前仅整理问题，尚未发起预约、派修或完成服务。" : ""
+			].filter(Boolean).join("\n\n"),
+			status: extras.length || request ? "needs_human" : "answered",
+			sources: [source$1(record, label, text + (url ? "\n" + url : ""), p, "guide", type)],
+			knowledgeIds: [],
+			mode: "property_guide",
+			answerKind: answerKind(question),
+			coveredScopes: [...scopes],
+			context: {
+				kind: context.kind,
+				id: record.id,
+				label,
+				propertyId: scopePropertyId(state),
+				unitId: context.unitId ?? null,
+				version: p.version
+			}
+		};
+	}
+	function recommendationEntry(state, context) {
+		const scope = {
+			propertyId: scopePropertyId(state),
+			unitId: context?.unitId ?? null
+		}, p = state.published;
+		const canonical = recommendationContext(context.kind, context.id, p, scope);
+		if (!canonical) return null;
+		return {
+			item: context.kind === "place" ? recommendedPlaceById(context.id, p, scope) : recommendedRouteById(context.id, p, scope),
+			context: {
+				...canonical,
+				scope: "local",
+				...context.cityId ? { cityId: context.cityId } : {}
+			},
+			scope
+		};
+	}
+	const periodName = {
+		half: "半天",
+		day: "一天"
+	};
+	function recommendationText(item, kind, state, scope) {
+		const parts = [
+			item.name,
+			item.description || "",
+			Number.isFinite(item.durationMinutes) ? `建议${kind === "route" ? "总安排" : "停留"}约${item.durationMinutes}分钟；按${periodName[item.period] || "待确认时长"}参考。` : "建议时长待核实。"
+		];
+		if (kind === "route") parts.push("站点顺序：" + item.placeIds.map((id) => recommendedPlaceById(id, state.published, scope)?.name).join(" → "));
+		if (item.address) parts.push(`目的地位置：${item.address}`);
+		parts.push(item.feeConfirmed === true && item.fee?.trim() ? `费用：${item.fee}` : "费用及计价单位待核实，请向管家或商户确认。");
+		parts.push(item.bookingConfirmed === true && item.booking?.trim() ? `预约条件：${item.booking}` : "预约方式、名额及限制待核实；当前没有发起预约。");
+		parts.push(recommendationTransport(item, state.published, scope));
+		const nav = recommendationNavigation(item, scope);
+		if (nav.available) parts.push("目的地地图：" + nav.url);
+		return parts.filter(Boolean).join("\n");
+	}
+	function localRulesQuestion(question) {
+		return /(?:本店|民宿|我们住的|这家民宿).{0,10}(?:厨房|宠物|早餐|门禁|门锁|入住|退房|热水|网络)|门锁|门禁|WiFi|wifi|停水|漏水|开票|发票/.test(question);
+	}
+	function isFollowUp(question) {
+		if (/^(?:请问)?(?:这个地点|这个地方|这家店|这条路线|这家|这里|它)(?:有|提供|能|可以|需要|怎么|多少|预约|要|适合|允许)/.test(question)) return true;
+		return norm$1(question).replace(/^(?:请问|那|那么|想知道|想了解)/, "").replace(/这个地点|这个地方|这家店|这条路线|这家|这里|它|多少钱|怎么样|好不好|怎么预约|怎么去|怎么走|怎么安排|要提前预约|需要预约|能预约|预约|预订|报名|订位|帮我们|帮我|请|安排|有名额|有什么需要注意|有什么需要留意|有什么|注意|留意|适合|人群|价格|费用|人均|营业|开放|提前|需要|请问|是否|可以|要|吗|呢|呀|啊|的|半天|一天|亲子|孩子|带娃|雨天|下雨|不爬山/g, "").length === 0;
+	}
+	function clearSubject(question) {
+		return String(question).replace(/(?:不问|不去|不看|不选|不考虑)[^，,。；;？?]*[，,。；;]?/g, "");
+	}
+	function recommendationMatches(state, question, scope) {
+		const topic = norm$1(clearSubject(question)), records = experienceOf(state.published, scopePropertyId(state)).recommendations ?? {}, matches = [];
+		for (const [kind, items] of [["place", records.places], ["route", records.routes]]) for (const item of items ?? []) if ([item.name, ...item.aliases ?? []].some((name) => norm$1(name).length >= 2 && topic.includes(norm$1(name)))) {
+			if (recommendationContext(kind, item.id, state.published, scope)) matches.push({
+				kind,
+				id: item.id
+			});
+		}
+		return matches;
+	}
+	function recommendationsAnswer(state, question, selected) {
+		const { item, context, scope } = selected, kind = context.kind, p = state.published;
+		const body = recommendationText(item, kind, state, scope), request = answerKind(question) === "request";
+		const needsFee = /多少钱|价格|费用|收费|免费|人均|预算|门票/.test(question) && !(item.feeConfirmed === true && item.fee?.trim());
+		const needsBooking = /预约|预订|报名|名额|订位/.test(question) && !(item.bookingConfirmed === true && item.booking?.trim());
+		const localExtras = [...requestedScopes(question)].filter((value) => [
+			"crib",
+			"extra-bed",
+			"pets",
+			"kitchen",
+			"breakfast",
+			"invoice",
+			"utilities",
+			"hotwater",
+			"network",
+			"network-fault"
+		].includes(value));
+		const unknownExtras = String(question).split(/另外|还有|顺便|以及|并且|同时/).slice(1).filter((part) => /吗|能|可以|是否|提供|安排|帮/.test(part) && !requestedScopes(part).size);
+		const remarks = [];
+		if (context.kind === "route" && /半天|两小时|三小时|2小时|3小时/.test(question) && item.period === "day") remarks.push("这是一条完整一天安排，不能直接作为半天路线；请另选已核实的半日安排。");
+		if (/雨天|下雨|不爬山/.test(question)) remarks.push("天气、体力和当日开放仍需核对；本条记录没有已确认的完整替代路线，不会自动改编行程。");
+		if (localExtras.length) remarks.push("其中涉及本店设施或额外服务的诉求，需回到本店范围或请管家分别确认，周边商户资料不能代替本店店规。");
+		if (unknownExtras.length) remarks.push(`额外诉求 ${unknownExtras.map((text) => "“" + text.trim() + "”").join("、")} 不在这条已确认资料中，请管家另行核对。`);
+		if (request) remarks.push("本地原型仅整理这项服务需求，需要人工确认；当前没有发起预约、报名、付款或派单。");
+		const sources = [source$1(item, item.name, body, p, "recommendations", kind)];
+		if (kind === "route") for (const id of item.placeIds) {
+			const stop = recommendedPlaceById(id, p, scope);
+			sources.push(source$1(stop, stop.name, recommendationText(stop, "place", state, scope), p, "recommendations", "place"));
+		}
+		if (/福利|权益|优惠|折扣/.test(question)) {
+			const benefits = recommendationBenefits(p, scope, kind === "place" ? item.id : null);
+			if (benefits.length) for (const benefit of benefits) {
+				remarks.push(`权益说明：${benefit.name}。${benefit.description || "使用条件需按已公开说明核对。"}这不表示已经领取或已享有。`);
+				sources.push(source$1(benefit, benefit.name, benefit.description || benefit.name, p, "recommendations", "benefit"));
+			}
+			else remarks.push("当前没有符合公开范围及有效期的已核实权益，不提供领取或已享有的承诺。");
+		}
+		return {
+			body: [
+				`本地向导 · ${experienceOf(p, scopePropertyId(state)).dataIdentity}`,
+				body,
+				...remarks
+			].join("\n\n"),
+			status: request || needsFee || needsBooking || localExtras.length || unknownExtras.length || remarks.some((t) => /不能直接作为半天/.test(t)) ? "needs_human" : "answered",
+			sources,
+			knowledgeIds: [],
+			mode: "recommendations",
+			answerKind: answerKind(question),
+			context
+		};
+	}
+	function previewAnswer(state, question, context) {
+		const pid = scopePropertyId(state), scope = {
+			propertyId: pid,
+			cityId: context?.cityId ?? (pid === "qinghuan-dali" ? "dali" : void 0),
+			context: context?.kind ? context : null
+		};
+		if (scope.context && !validContentContext(scope.context, scope)) return unavailable$2("原稿对象已失效或不属于当前房源，不能引用；请返回重新选择。");
+		const reply = answerContent(question, scope);
+		if (!reply) return pending$2("当前房源没有可用于这个问题的已核实本地资料。请补充具体对象或请管家确认，不会用其他民宿内容代替。");
+		return {
+			body: reply.body,
+			status: "needs_human",
+			mode: reply.mode,
+			knowledgeIds: [],
+			context: reply.context ? {
+				...reply.context,
+				scope: "local",
+				unitId: context?.unitId ?? null,
+				version: state.published.version
+			} : null,
+			sources: (reply.refs ?? []).map((ref) => ({
+				key: "source-preview:" + ref.id,
+				label: ref.label,
+				text: reply.body,
+				version: state.published.version,
+				sourceLabel: ref.source,
+				sourceVersion: ref.version,
+				reference: clone$3(ref),
+				status: "pending"
+			})),
+			answerKind: answerKind(question)
+		};
+	}
+	function answerExperience(state, question, context = null) {
+		if (!state.visible) return unavailable$2("本民宿资料暂时停止展示，请联系管家。");
+		const issue = contextIssue(state, context);
+		if (issue) return issue;
+		if (context?.collection === "recommendations" && !recommendationEntry(state, context)) return unavailable$2("这个周边推荐已停用、失效或不属于当前房源/单元，请重新选择。");
+		if (["arrival", "guide"].includes(context?.kind)) {
+			if (/^Q(?:0[1-9]|[12]\d|30)$/.test(context.id ?? "")) {
+				if (!(state.published.knowledge ?? []).some((item) => item.id === context.id)) return unavailable$2("这道指南题已停用或不适用于当前房源，请重新选择。");
+			} else if (!guideEntry(state, context)) return unavailable$2("这项指南内容尚未公开确认、已停用或不适用于当前单元。请重新选择或请管家确认。");
+		} else if (context?.kind && context.collection !== "recommendations" && context?.scope === "local" && !validContentContext(context, {
+			propertyId: scopePropertyId(state),
+			cityId: context.cityId
+		})) return unavailable$2("这个周边对象已失效或不属于当前房源，请重新选择。");
+		if (originalGuideQuestion(state.published, question)) return null;
+		if (["arrival", "guide"].includes(context?.kind)) {
+			if (/^Q(?:0[1-9]|[12]\d|30)$/.test(context.id ?? "")) return null;
+			return guideAnswer(state, question, context);
+		}
+		if (!(context?.scope === "local" || context?.collection === "recommendations")) return null;
+		let selected = null;
+		if (context?.collection === "recommendations") {
+			selected = recommendationEntry(state, context);
+			if (!selected) return unavailable$2("这个周边推荐已停用、失效或不属于当前房源/单元，请重新选择。");
+		} else if (context?.kind && (![
+			"place",
+			"route",
+			"activity-lead"
+		].includes(context.kind) || !validContentContext(context, {
+			propertyId: scopePropertyId(state),
+			cityId: context.cityId
+		}))) return unavailable$2("这个周边对象已失效或不属于当前房源，请重新选择。");
+		if (localRulesQuestion(question)) return {
+			...pending$2("这里是本地向导范围。涉及本店入住规则、厨房、设备或服务，请切换回本店AI管家，按当前房源公开资料查询；周边商户资料不会作为本店设施。"),
+			mode: "scope_switch_required"
+		};
+		const scope = {
+			propertyId: scopePropertyId(state),
+			unitId: context?.unitId ?? null
+		}, matches = recommendationMatches(state, question, scope);
+		if (matches.length === 1) return recommendationsAnswer(state, question, recommendationEntry(state, {
+			...matches[0],
+			...scope,
+			cityId: context?.cityId
+		}));
+		if (matches.length > 1) {
+			const replies = matches.slice(0, 5).map((match) => recommendationsAnswer(state, question, recommendationEntry(state, {
+				...match,
+				...scope,
+				cityId: context?.cityId
+			})));
+			return {
+				body: replies.map((reply) => reply.body).join("\n\n"),
+				status: replies.some((reply) => reply.status === "needs_human") ? "needs_human" : "answered",
+				sources: replies.flatMap((reply) => reply.sources),
+				knowledgeIds: [],
+				mode: "recommendations",
+				context: null,
+				answerKind: answerKind(question)
+			};
+		}
+		const reset = clearSubject(question) !== question || /换(?:个|一家|一条)|改问|别的|其他/.test(question);
+		if (selected && !reset && isFollowUp(question)) return recommendationsAnswer(state, question, selected);
+		if (/^(?:请问)?(?:附近|周边).*(?:推荐|有什么|有哪些)|^(?:请)?推荐|^(?:亲子|带娃|带孩子|半天|一天).*(?:怎么|推荐|安排|玩)/.test(question) && !/(?:几点|开门|多少钱|营业)/.test(question)) {
+			const filters = {
+				period: /半天/.test(question) ? "half" : /一天/.test(question) ? "day" : "all",
+				party: /亲子|孩子|带娃/.test(question) ? "family" : /老人|长辈/.test(question) ? "senior" : /独自|一个人/.test(question) ? "solo" : "all"
+			};
+			const picks = selectRecommendations(state.published, scope, filters), items = [...picks.places.map((item) => ({
+				kind: "place",
+				id: item.id
+			})), ...picks.routes.map((item) => ({
+				kind: "route",
+				id: item.id
+			}))];
+			if (items.length) {
+				const replies = items.map((item) => recommendationsAnswer(state, question, recommendationEntry(state, {
+					...item,
+					...scope,
+					cityId: context?.cityId
+				})));
+				return {
+					body: replies.map((reply) => reply.body).join("\n\n"),
+					status: replies.some((reply) => reply.status === "needs_human") ? "needs_human" : "answered",
+					sources: replies.flatMap((reply) => reply.sources),
+					knowledgeIds: [],
+					mode: "recommendations",
+					context: items.length === 1 ? replies[0].context : null,
+					answerKind: answerKind(question)
+				};
+			}
+		}
+		return previewAnswer(state, question, context?.collection === "recommendations" ? {
+			scope: "local",
+			propertyId: scopePropertyId(state),
+			unitId: context.unitId ?? null,
+			cityId: context.cityId
+		} : context);
+	}
+	function canonicalCoreContext(state, context) {
+		if (!context) return null;
+		if (context.collection === "recommendations") return recommendationEntry(state, context)?.context ?? null;
+		if (context.scope === "local" && [
+			"place",
+			"route",
+			"activity-lead"
+		].includes(context.kind)) {
+			const resolved = validContentContext(context, {
+				propertyId: scopePropertyId(state),
+				cityId: context.cityId
+			});
+			return resolved ? {
+				...resolved,
+				scope: "local",
+				unitId: context.unitId ?? null,
+				version: state.published.version
+			} : null;
+		}
+		if (context.kind === "guide" && originalGuides.has(context.id)) {
+			const item = state.published.knowledge.find((k) => k.id === context.id);
+			if (!item) return null;
+			return {
+				...context,
+				label: `${item.id} · ${item.question}`,
+				propertyId: scopePropertyId(state),
+				version: state.published.version
+			};
+		}
+		const room = context.roomId ? (state.published.rooms ?? []).find((item) => item.id === context.roomId) : null;
+		return {
+			...context,
+			...room ? { label: room.name } : {},
+			propertyId: scopePropertyId(state),
+			version: state.published.version
+		};
+	}
+	//#endregion
+	//#region src/model.mjs
+	const clone$2 = (x) => structuredClone(x);
+	const own$1 = (obj, key) => Object.hasOwn(obj, key);
+	const norm = (x) => String(x ?? "").normalize("NFKC").replace(/[\s？?。！!，,、]/g, "").toLowerCase();
+	const id = () => globalThis.crypto.randomUUID();
+	const TOPICS = {
+		kitchen: {
+			label: "厨房使用规则",
+			pattern: /厨房|做饭|煮饭|烹饪|锅具|厨具/
+		},
+		parking: {
+			label: "停车说明",
+			pattern: /停车|车位|自驾|停哪/
+		},
+		checkin: {
+			label: "入住与退房",
+			pattern: /入住|退房|几点到|提前到|晚到/
+		},
+		location: {
+			label: "位置与交通",
+			pattern: /地址|在哪|位置|怎么去|怎么走|导航|交通/
+		},
+		environment: {
+			label: "环境与公共区域",
+			pattern: /院子|庭院|环境|客厅|公共区/
+		},
+		wifi: {
+			label: "网络与设施",
+			pattern: /wifi|wi-fi|无线|网络|空调|吹风机|洗衣/i
+		},
+		pets: {
+			label: "宠物规则",
+			pattern: /宠物|带狗|带猫|狗狗|猫咪/
+		},
+		breakfast: {
+			label: "早餐说明",
+			pattern: /早餐|早饭/
+		},
+		barbecue: {
+			label: "烧烤规则",
+			pattern: /烧烤|烤肉/
+		},
+		accessibility: {
+			label: "无障碍与通行",
+			pattern: /轮椅|无障碍|楼梯|电梯/
+		},
+		price: {
+			label: "价格与预订",
+			pattern: /价格|多少钱|预订|预定|房价|退款|取消订单/
+		},
+		nearby: {
+			label: "周边吃喝玩乐",
+			pattern: /周边|附近|餐厅|景点|吃什么|去哪玩/
+		}
+	};
+	function createSeed() {
+		const draft = {
+			name: "松间小院",
+			subtitle: "住进山间，把日子慢下来。",
+			location: "浙江 · 莫干山（虚构示例）",
+			description: "一座被绿意围住的小院。清晨在院子里喝茶，午后一起做饭，晚上把时间留给家人和朋友。",
+			facts: {
+				kitchen: { text: "厨房可以做饭，开放时间为10:00—20:00，需提前向管家预约。提供基础锅具和餐具；食材、调料请自备，使用后请清洁归位。" },
+				parking: { text: "院外有3个免费停车位，车位先到先停，不提供预留。到达前请联系管家确认当天情况。" },
+				checkin: { text: "入住时间为14:00后，退房时间为次日12:00前。需登记每位入住人的身份信息；提前入住、延迟退房请管家单独确认。" },
+				location: { text: "民宿位于浙江莫干山地区，原型使用虚构地址，不提供真实导航。实际到店路线需由管家提供。" },
+				environment: { text: "有独立庭院、共享客厅和共享厨房。庭院与客厅开放至22:00，22:00后请降低音量。" },
+				wifi: { text: "客房与共享客厅提供Wi-Fi；客房配有空调、吹风机。Wi-Fi密码到店后向管家获取；洗衣设施尚未记录。" }
+			},
+			rooms: [{
+				id: "mountain",
+				name: "听山 · 大床房",
+				type: "大床房",
+				floor: "二楼",
+				area: "约28㎡",
+				beds: "1张1.8米大床",
+				capacity: "建议2人入住",
+				bath: "独立卫浴",
+				photo: "bedroom",
+				description: "窗外是满眼山色，房内以原木与棉麻为主。",
+				facilities: [
+					"独立卫浴",
+					"空调",
+					"Wi-Fi",
+					"吹风机"
+				]
+			}, {
+				id: "courtyard",
+				name: "望院 · 双床房",
+				type: "双床房",
+				floor: "一楼",
+				area: "约30㎡",
+				beds: "2张1.2米单人床",
+				capacity: "建议2人入住",
+				bath: "独立卫浴",
+				photo: "bedroom",
+				description: "面向庭院，适合朋友同行。图片仅作空间氛围示意。",
+				facilities: [
+					"独立卫浴",
+					"空调",
+					"Wi-Fi",
+					"吹风机"
+				]
+			}],
+			knowledge: [],
+			vrUrl: "https://tujia.realsee.cn/redJnEMB",
+			vrKind: "reference",
+			vrLabel: "身临其境，感受空间",
+			vrDescription: "走进空间，感受一间民宿。"
+		};
+		return {
+			schema: 1,
+			revision: 0,
+			propertyId: "songjian-demo",
+			visible: true,
+			draft,
+			published: {
+				...clone$2(draft),
+				version: 1,
+				publishedAt: Date.now()
+			},
+			draftDirty: false,
+			threads: {},
+			tickets: {},
+			operations: {}
+		};
+	}
+	function answer(state, question, context = null) {
+		if (!state.visible) return {
+			status: "unavailable",
+			body: "本民宿资料暂时停止展示，请联系管家。",
+			sources: [],
+			knowledgeIds: [],
+			context: null
+		};
+		const issue = contextIssue(state, context);
+		if (issue) return {
+			...issue,
+			mode: context?.scope === "local" ? "local" : "property"
+		};
+		const current = answerState(state, context), adapted = answerExperience(current, question, context);
+		const finish = (result) => {
+			const kind = answerKind(question);
+			if (state.published.experience && kind === "request" && !originalGuideQuestion(current.published, question) && result.status === "answered") return {
+				...result,
+				answerKind: kind,
+				status: "needs_human",
+				body: result.body + "\n\n这是服务需求或故障咨询，需要人工确认；当前仅整理问题，尚未预约、派修或完成服务。"
+			};
+			return result;
+		};
+		if (adapted) {
+			if (adapted.mode === "property_guide") {
+				const core = answerCore(current, question, context);
+				if (core.sources?.length && /规则|免费|收费|费用|可以|能否|几点|开放|时间|宠物|厨房/.test(question)) return finish({
+					...core,
+					mode: "property",
+					answerKind: answerKind(question),
+					context: adapted.context
+				});
+			}
+			return finish({
+				...adapted,
+				mode: adapted.mode ?? (context?.scope === "local" ? "local" : "property")
+			});
+		}
+		const result = answerCore(current, question, context), kind = answerKind(question);
+		return finish({
+			...result,
+			mode: context?.scope === "local" ? "property" : result.mode,
+			answerKind: kind,
+			context: canonicalCoreContext(current, context)
+		});
+	}
+	function answerCore(state, question, context = null) {
+		const p = {
+			...state.published,
+			rooms: state.published.rooms.filter((r) => r.enabled !== false)
+		}, q = norm(question), sources = [], parts = [], missing = [];
+		let needsClarification = false;
+		if (!state.visible) return {
+			status: "unavailable",
+			body: "本民宿资料暂时停止展示，请联系管家。",
+			sources: []
+		};
+		if (context?.roomId && !p.rooms.some((r) => r.id === context.roomId)) return {
+			status: "needs_clarification",
+			body: "这个房间不在本民宿当前公开资料中，请重新选择房间。",
+			sources: []
+		};
+		const add = (key, label, text, metadata = {}) => {
+			if (sources.some((source) => source.key === key)) return;
+			sources.push({
+				key,
+				label,
+				text,
+				version: p.version,
+				...metadata
+			});
+			parts.push(text);
+		};
+		const guideMetadata = (k) => ({
+			kind: k.kind,
+			requiresHuman: k.requiresHuman !== false,
+			sourceLabel: k.sourceLabel,
+			sourceRange: k.sourceRange
+		});
+		const addKnowledge = (k) => add("knowledge:" + k.id, k.question, k.text, k.kind === "confirmation_guide" ? guideMetadata(k) : {});
+		const pendingGuide = (k) => k.kind === "confirmation_guide" && k.requiresHuman !== false;
+		const analysis = analyzeQinghuanQuestion(p, question), guideMatches = analysis.guides, knowledgeIds = guideMatches.map((guide) => guide.id);
+		const exactKnowledge = p.knowledge.find((k) => !pendingGuide(k) && [k.question, ...k.aliases].some((a) => norm(a) === q));
+		const contextualQuestion = /开放|时间|几点|这里|这个空间/.test(q) && [
+			"独立庭院",
+			"共享厨房",
+			"共享客厅"
+		].includes(context?.spaceName) ? q + norm(context.spaceName) : q;
+		const requested = requestedScopes(contextualQuestion);
+		const knownFor = (scopes, keys = null) => relevantFacts(p, scopes, keys);
+		const addFacts = (facts) => {
+			for (const fact of facts) add(fact.key, TOPICS[fact.key]?.label || fact.key, fact.text);
+		};
+		const wholeQuestion = p.rentalMode === "whole" && /整院|包栋|整栋|几间卧室/.test(q);
+		function resolveRoom(query) {
+			const named = p.rooms.filter((r) => query.includes(norm(r.name.split(" · ")[0])) || query.includes(norm(r.type)));
+			return context?.roomId ? p.rooms.find((r) => r.id === context.roomId) : named.length === 1 ? named[0] : null;
+		}
+		function addRoomConfiguration(query, whole = false) {
+			if (whole) {
+				add("whole", "整院配置", `${p.name}按整院包栋出租，包含${p.rooms.length}间卧室，不单独出租卧室。${p.wholeCapacity || "整院总入住人数尚未记录，请管家确认。"}床型配置：${p.rooms.map((r) => r.name + "，" + r.beds).join("；")}。`);
+				return;
+			}
+			if (p.profilePending === true && !p.rooms.length) {
+				missing.push("房间配置与面积（房源资料待录入）");
+				return;
+			}
+			const room = resolveRoom(query);
+			if (room) add("room:" + room.id, room.name, `${room.name}位于${room.floor}，${room.area}，配置${room.beds}、${room.bath}，${room.capacity}。已记录设施：${room.facilities.join("、")}。`);
+			else {
+				needsClarification = true;
+				parts.push("你想了解哪一间房？可以先在「房间设施」选择" + p.rooms.map((r) => r.name).join("、") + "，再带着房间来问我。");
+			}
+		}
+		const finish = (pending = false) => {
+			if (missing.length) parts.push(`本店资料尚未记录${[...new Set(missing)].join("、")}，我暂时无法确认。可以点击下方「请管家确认」，把问题交给民宿管家。`);
+			return {
+				status: pending || missing.length ? "needs_human" : needsClarification ? "needs_clarification" : "answered",
+				body: parts.join("\n\n"),
+				sources,
+				knowledgeIds
+			};
+		};
+		const exactClaims = exactKnowledge ? requestedScopes(question + "；" + exactKnowledge.text) : /* @__PURE__ */ new Set();
+		const structuralConflict = exactKnowledge && configurationQuestion(question + "；" + exactKnowledge.text) && (resolveRoom(q) || wholeQuestion);
+		if (exactKnowledge && !knownFor(exactClaims).length && !structuralConflict) {
+			addKnowledge(exactKnowledge);
+			return finish();
+		}
+		if (structuralConflict) {
+			for (const scope of ["extra-bed", "crib"]) if (requested.has(scope)) missing.push(scopeLabel(scope));
+		}
+		if (guideMatches.length && !exactKnowledge) {
+			const owned = /* @__PURE__ */ new Set(), guides = guideMatches.filter(pendingGuide);
+			for (const guide of guideMatches) {
+				const guideScopes = requestedScopes([guide.question, ...guide.aliases].join("；"));
+				for (const scope of guideScopes) owned.add(scope);
+				const guideRequest = intersection(requested, guideScopes);
+				const pending = pendingGuide(guide);
+				const facts = knownFor(pending ? guideRequest : /* @__PURE__ */ new Set([...guideRequest, ...requestedScopes(guide.text)]), guide.topics);
+				addFacts(facts);
+				if (!pending && facts.length) {
+					const covered = new Set(facts.flatMap((fact) => [...fact.scopes]));
+					for (const scope of difference(guideRequest, covered)) missing.push(scopeLabel(scope));
+					continue;
+				}
+				const advice = precautions(guide.text);
+				const body = facts.length ? `${advice ? advice + "\n" : ""}${guide.question}\n其余待确认项：${guide.confirmationChecklist}（以上公开规则已明确的部分除外）。` : guide.text;
+				add("knowledge:" + guide.id, guide.id + (pending ? " · 待确认指南" : " · 已确认公开答复"), body, guideMetadata(guide));
+			}
+			const remainderScopes = requestedScopes(analysis.remainder), extraScopes = difference(remainderScopes, owned);
+			if (remainderScopes.has("room") && configurationQuestion(analysis.remainder)) extraScopes.add("room");
+			for (const scope of extraScopes) {
+				if (scope === "room") {
+					addRoomConfiguration(norm(analysis.remainder), p.rentalMode === "whole" && configurationQuestion(analysis.remainder));
+					continue;
+				}
+				const facts = knownFor(/* @__PURE__ */ new Set([scope]));
+				if (facts.length) addFacts(facts);
+				else missing.push(scopeLabel(scope));
+			}
+			for (const clause of analysis.remainder.split(/[，,。.!！?？；;:：\n]|另外|还有|以及|顺便|并且|同时/).filter((part) => part.trim())) if (!requestedScopes(clause).size && !matchQinghuanGuides(p, clause).length && /吗|能|可以|怎么|如何|是否|提供|安排|帮/.test(clause)) missing.push("“" + clause.trim() + "”");
+			return finish(guides.length > 0);
+		}
+		const roomQuestion = /房间|房型|床|卫浴|浴室|几人|几个人|住几|面积|楼层|几楼/.test(q);
+		if (wholeQuestion) addRoomConfiguration(q, true);
+		if (roomQuestion && !wholeQuestion) addRoomConfiguration(q);
+		const matched = Object.entries(TOPICS).filter(([key, topic]) => topic.pattern.test(contextualQuestion) || [...requested].some((scope) => scopeKey(scope) === key));
+		for (const [key, topic] of matched) {
+			const scopes = new Set([...requested].filter((scope) => scopeKey(scope) === key));
+			const facts = knownFor(scopes, [key]);
+			if (facts.length) {
+				addFacts(facts);
+				const covered = new Set(facts.flatMap((fact) => [...fact.scopes]));
+				for (const scope of difference(scopes, covered)) missing.push(scopeLabel(scope));
+			} else missing.push(topic.label);
+		}
+		if (!matched.length && !roomQuestion && !wholeQuestion) {
+			if (/^(你好|您好|嗨|hello|hi)$/.test(q)) return {
+				status: "answered",
+				body: `你好，我是${p.name}的AI管家。可以问我厨房、停车、入住，或先看看房间。资料里没有的，我会请民宿管家确认。`,
+				sources: []
+			};
+			missing.push("这个问题");
+		}
+		return finish();
+	}
+	function guestThreads(state, sessionId) {
+		return Object.values(state.threads).filter((t) => t.owner === sessionId && t.propertyId === state.propertyId);
+	}
+	function text$1(value, label, max = 1e3) {
+		if (typeof value !== "string" || !value.trim() || value.trim().length > max) throw Error(`请填写${label}（1—${max}字）`);
+		return value.trim();
+	}
+	function validateDraft(d) {
+		if (!d || typeof d !== "object") throw Error("资料格式不正确");
+		text$1(d.name, "民宿名称", 40);
+		text$1(d.subtitle, "民宿短句", 80);
+		text$1(d.location, "位置", 200);
+		text$1(d.description, "民宿介绍", 1e3);
+		for (const k of Object.keys(TOPICS)) if (d.facts[k]) {
+			if (typeof d.facts[k].text !== "string" || d.facts[k].text.length > 1e3) throw Error("使用规则需在1000字以内");
+		}
+		if (d.rooms.length < (d.profilePending === true ? 0 : 1) || d.rooms.length > 10) throw Error("请保留1—10间房");
+		for (const r of d.rooms) for (const k of [
+			"name",
+			"floor",
+			"area",
+			"beds",
+			"capacity",
+			"bath"
+		]) text$1(r[k], "房间资料", 100);
+		if (d.vrUrl !== "https://tujia.realsee.cn/redJnEMB") throw Error("本轮仅使用已指定的VR参考案例");
+		if (d.vrLabel !== void 0) text$1(d.vrLabel, "VR入口说明", 80);
+		if (d.vrDescription !== void 0) text$1(d.vrDescription, "VR展示说明", 500);
+		if (d.knowledge.length > 50) throw Error("知识条目最多50条");
+		const keys = /* @__PURE__ */ new Set();
+		for (const k of d.knowledge) {
+			text$1(k.question, "公开问题", 200);
+			text$1(k.text, "公开答案", 1e3);
+			if (!Array.isArray(k.aliases) || k.aliases.length > 5) throw Error("相似问法最多5个");
+			for (const alias of [k.question, ...k.aliases]) {
+				text$1(alias, "问法", 200);
+				const key = norm(alias);
+				if (keys.has(key)) throw Error("已有相同问法，请编辑原知识");
+				keys.add(key);
+			}
+		}
+	}
+	function dispatch(state, action, ctx) {
+		const { type } = action;
+		if (!ctx?.sessionId) throw Error("无法保持演示会话，请启用浏览器会话存储");
+		const guestActions = ["ASK", "HANDOFF"], merchantActions = [
+			"REPLY",
+			"ACCEPT",
+			"SAVE_DRAFT",
+			"PUBLISH",
+			"SAVE_KNOWLEDGE",
+			"DELETE_KNOWLEDGE"
+		];
+		if (guestActions.includes(type) && ctx.role !== "guest") throw Error("请从客人端操作");
+		if (merchantActions.includes(type) && ctx.role !== "merchant") throw Error("请从商家端操作");
+		if (type === "SET_VISIBLE" && ctx.role !== "platform") throw Error("请从平台端操作");
+		if (![
+			...guestActions,
+			...merchantActions,
+			"SET_VISIBLE"
+		].includes(type)) throw Error("未知操作");
+		const operationKey = action.operation ? `${ctx.sessionId}:${type}:${action.operation}` : null;
+		if (operationKey && own$1(state.operations, operationKey)) return state;
+		const s = clone$2(state), now = Date.now();
+		if (type === "ASK") {
+			if (!s.visible) throw Error("本民宿资料暂停展示，请联系管家");
+			const body = text$1(action.body, "问题");
+			let t;
+			if (action.threadId) {
+				t = s.threads[action.threadId];
+				if (!t || t.owner !== ctx.sessionId || t.propertyId !== s.propertyId) throw Error("找不到本人的会话");
+			} else t = guestThreads(s, ctx.sessionId)[0];
+			if (!t) {
+				t = {
+					id: id(),
+					propertyId: s.propertyId,
+					owner: ctx.sessionId,
+					messages: [],
+					createdAt: now
+				};
+				s.threads[t.id] = t;
+			}
+			const a = answer(s, body, action.context ?? null), guestId = id();
+			t.messages.push({
+				id: guestId,
+				role: "guest",
+				body,
+				context: clone$2(action.context ?? null),
+				at: now
+			});
+			t.messages.push({
+				id: id(),
+				role: "assistant",
+				body: a.body,
+				status: a.status,
+				sources: clone$2(a.sources ?? []),
+				knowledgeIds: clone$2(a.knowledgeIds ?? []),
+				mode: a.mode ?? "property",
+				answerKind: a.answerKind ?? "rule",
+				context: clone$2(a.context ?? null),
+				resolvedContext: clone$2(a.context ?? null),
+				contextLabel: a.context?.label ?? null,
+				propertyId: s.propertyId,
+				version: s.published.version,
+				replyTo: guestId,
+				at: now
+			});
+		}
+		if (type === "HANDOFF") {
+			const t = s.threads[action.threadId];
+			if (!t || t.owner !== ctx.sessionId || t.propertyId !== s.propertyId) throw Error("找不到本人的会话");
+			const m = t.messages.find((m) => m.id === action.messageId && m.role === "assistant");
+			if (!m) throw Error("找不到需要确认的问题");
+			if (!Object.values(s.tickets).some((x) => x.messageId === m.id)) {
+				const g = t.messages.find((x) => x.id === m.replyTo), ticketId = id();
+				s.tickets[ticketId] = {
+					id: ticketId,
+					threadId: t.id,
+					messageId: m.id,
+					question: g.body,
+					context: clone$2(g.context),
+					contextLabel: m.contextLabel ?? g.context?.label ?? null,
+					propertyId: s.propertyId,
+					version: m.version ?? s.published.version,
+					knowledgeIds: clone$2(m.knowledgeIds ?? []),
+					status: "pending",
+					createdAt: now,
+					reply: null
+				};
+			}
+		}
+		if (type === "ACCEPT" || type === "REPLY") {
+			const ticket = s.tickets[action.ticketId];
+			if (!ticket) throw Error("咨询已不存在，请刷新工作台");
+			if (type === "ACCEPT" && ticket.status === "pending") ticket.status = "processing";
+			if (type === "REPLY") {
+				if (ticket.status === "replied") throw Error("这条咨询已回复，请勿重复发送");
+				if (s.published.experience && ticket.status !== "processing") throw Error("请先接手这条咨询，再发送人工回复");
+				const thread = s.threads[ticket.threadId];
+				if (!thread || thread.propertyId !== s.propertyId || ticket.propertyId && ticket.propertyId !== s.propertyId) throw Error("原咨询不属于当前房源，请返回工作台核对");
+				const body = text$1(action.body, "回复");
+				const m = {
+					id: id(),
+					role: "merchant",
+					body,
+					replyTo: ticket.messageId,
+					at: now
+				};
+				s.threads[ticket.threadId].messages.push(m);
+				ticket.status = "replied";
+				ticket.reply = m;
+			}
+		}
+		if (type === "SAVE_DRAFT") {
+			validateDraft(action.draft);
+			s.draft = clone$2(action.draft);
+			s.draftDirty = true;
+		}
+		if (type === "SAVE_KNOWLEDGE") {
+			const knowledgeId = action.knowledgeId ?? id(), idx = s.draft.knowledge.findIndex((x) => x.id === knowledgeId), previous = s.draft.knowledge[idx];
+			const k = {
+				...previous,
+				id: knowledgeId,
+				question: text$1(action.question, "公开问题", 200),
+				text: text$1(action.text, "公开答案"),
+				aliases: (action.aliases ?? []).map((a) => text$1(a, "相似问法", 200))
+			};
+			if (previous?.kind === "confirmation_guide") {
+				if (own$1(action, "requiresHuman") && typeof action.requiresHuman !== "boolean") throw Error("请明确选择是否仍需人工确认");
+				k.requiresHuman = own$1(action, "requiresHuman") ? action.requiresHuman : previous.requiresHuman !== false;
+			}
+			if (idx < 0) s.draft.knowledge.push(k);
+			else s.draft.knowledge[idx] = k;
+			validateDraft(s.draft);
+			s.draftDirty = true;
+		}
+		if (type === "DELETE_KNOWLEDGE") {
+			s.draft.knowledge = s.draft.knowledge.filter((k) => k.id !== action.knowledgeId);
+			s.draftDirty = true;
+		}
+		if (type === "PUBLISH") {
+			validateDraft(s.draft);
+			s.published = {
+				...clone$2(s.draft),
+				version: s.published.version + 1,
+				publishedAt: now
+			};
+			s.draftDirty = false;
+		}
+		if (type === "SET_VISIBLE") s.visible = Boolean(action.visible);
+		if (operationKey) s.operations[operationKey] = true;
+		s.revision++;
+		return s;
+	}
+	//#endregion
+	//#region src/guide-ui.mjs
+	const esc$4 = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+		"&": "&amp;",
+		"<": "&lt;",
+		">": "&gt;",
+		"\"": "&quot;",
+		"'": "&#39;"
+	})[char]);
+	const source = (record) => `<p class="small muted guide-source">来源：${esc$4(record.sourceLabel || "公开资料")} · 确认：${esc$4(record.confirmation?.by || "已发布资料")} ${esc$4(record.confirmation?.at || "")}</p>`;
+	const ask$1 = (kind, id, question, label) => `<button type="button" class="text-btn guide-ask" data-action="guide-ask" data-kind="${kind}" data-id="${esc$4(id)}" data-question="${esc$4(question)}" data-label="${esc$4(label)}">带着这个问题咨询</button>`;
+	const multiline = (value) => esc$4(value).replaceAll("\n", "<br>");
+	function pointMarkup(record, key, label, propertyId, unitId) {
+		const visible = publicRecord(record, propertyId, unitId), map = visible ? guideMapUrl(record, propertyId, unitId) : "";
+		return `<article class="knowledge-item guide-point" data-guide-point="${key}"><h3>${label}</h3>${visible && record.address?.trim() ? `<p class="guide-address">${esc$4(record.address)}</p><div class="action-row">${map ? `<a class="text-btn" data-guide-navigation="${key}" href="${esc$4(map)}" target="_blank" rel="noopener noreferrer">打开地图导航</a>` : "<span class=\"small muted\">定位待补，暂不提供导航。</span>"}<button type="button" class="text-btn" data-action="guide-copy-address" data-id="${esc$4(record.id)}" data-address="${esc$4(record.address)}">复制${label}地址</button></div>${source(record)}` : "<p class=\"small muted\">此处的公开位置尚待确认，请向管家获取。不会以其他位置代替。</p>"}${ask$1("arrival", record?.id || key, `请确认${label}与到店走法。`, label)}</article>`;
+	}
+	function mediaMarkup(record) {
+		const href = safeExternalUrl(record.url), caption = record.text || record.title || "图文说明待补充";
+		let player = "";
+		if (href && record.type === "video") player = `<video class="guide-media" controls preload="none" playsinline data-guide-media="${esc$4(record.id)}" src="${esc$4(href)}">当前浏览器无法播放视频，请查看图文说明或联系管家。</video>`;
+		else if (href && record.type === "image") player = `<img class="guide-media" loading="lazy" data-guide-media="${esc$4(record.id)}" src="${esc$4(href)}" alt="${esc$4(record.title || "到店路线参考图")}" />`;
+		else if (href && record.type === "link") player = `<a class="text-btn" href="${esc$4(href)}" target="_blank" rel="noopener noreferrer" data-guide-external="${esc$4(record.id)}">打开${esc$4(record.title || "到店参考资料")} ↗</a>`;
+		return `<figure class="knowledge-item guide-media-card"><figcaption><h3>${esc$4(record.title || "到店图文与视频")}</h3><p>${multiline(caption)}</p></figcaption>${player}<p class="small muted guide-media-fallback" data-guide-media-fallback="${esc$4(record.id)}">${href ? "如视频、图片或外链加载失败，可继续按图文说明查看；仍找不到时使用下方联系出口。" : "媒体链接缺失或不可用，请按图文说明查看，或使用下方联系出口。"}</p>${source(record)}</figure>`;
+	}
+	function contactMarkup(record, propertyId, unitId) {
+		const visible = publicRecord(record, propertyId, unitId), href = visible ? safeExternalUrl(record.url) : "";
+		return `<section class="editor-group guide-contact" id="guide-contact"><h2>找不到时，联系管家</h2>${visible && record.text?.trim() ? `<p>${multiline(record.text)}</p>${href ? `<a class="text-btn" href="${esc$4(href)}" target="_blank" rel="noopener noreferrer">打开已确认联系入口 ↗</a>` : ""}${source(record)}` : "<p>本店对客联系方式与接待时段待确认。请通过原订单平台已有的商家联系入口联系管家。</p>"}${ask$1("arrival", record?.id || "contact", "我找不到入口，请管家协助确认到店路线。", "到店联系")}</section>`;
+	}
+	function arrivalMarkup(snapshot, propertyId, unitId = null) {
+		const p = publishedSnapshot(snapshot), guide = guideOf(p, propertyId), steps = publicGuideRecords(guide.steps, propertyId, unitId).filter((s) => !s.phase || s.phase === "arrival"), media = publicGuideRecords(guide.media, propertyId, unitId).filter((m) => !m.phase || m.phase === "arrival");
+		return `<section class="arrival-guide"><p class="notice">${esc$4(experienceOf(p, propertyId).dataIdentity)}。先核对入口和停车点，再打开地图；地图无法打开时可复制已公开地址。</p><section class="editor-group"><h2>如何到店</h2><p class="small muted">民宿位置、停车点和实际入口分别核对。</p>${GUIDE_POINTS.map(({ id, label }) => pointMarkup(guide.points?.[id], id, label, propertyId, unitId)).join("")}</section><section class="editor-group"><h2>下车后，最后一段路</h2>${steps.length ? `<ol class="guide-steps">${steps.map((s) => `<li><h3>${esc$4(s.title || "到店步骤")}</h3><p>${multiline(s.text)}</p>${source(s)}${ask$1("arrival", s.id, "请说明这一步：" + (s.title || s.text), "到店指引 · " + (s.title || "操作步骤"))}</li>`).join("")}</ol>` : "<p class=\"small muted\">本店路书图文、地标和夜间提示待补。请向管家核对，不按社区中心点推测房门位置。</p>"}</section><section class="editor-group"><h2>图文和视频</h2>${media.length ? media.map(mediaMarkup).join("") : "<p class=\"notice\">暂无已确认的视频或图片。已有文字说明仍可查看；需要带路时请使用下方联系出口。</p>"}</section>${contactMarkup(guide.contact, propertyId, unitId)}</section>`;
+	}
+	const factLabels = {
+		parking: "停车说明",
+		location: "位置与交通",
+		checkin: "入住与退房",
+		kitchen: "厨房规则",
+		wifi: "网络与设备使用",
+		breakfast: "早餐说明",
+		environment: "公共空间",
+		pets: "宠物规则",
+		accessibility: "通行说明",
+		barbecue: "烧烤规则",
+		price: "费用与订单说明"
+	};
+	function legacyHandbook(p, propertyId) {
+		const facts = Object.entries(p.facts ?? {}).filter(([, item]) => guestPublishedItem(item, propertyId)).map(([key, item]) => ({
+			...item,
+			id: `fact:${key}`,
+			question: factLabels[key] || key,
+			phase: handbookPhase(item, key)
+		}));
+		const knowledge = (p.knowledge ?? []).filter((item) => guestPublishedItem(item, propertyId)).map((item) => ({
+			...item,
+			phase: handbookPhase(item)
+		}));
+		return GUIDE_PHASES.map((phase) => {
+			const items = [...facts, ...knowledge].filter((item) => item.phase === phase.id);
+			return `<section class="editor-group service-phase" data-guide-phase="${phase.id}"><h2>${phase.label}</h2>${items.length ? items.map((item) => {
+				const kind = guideKind(item);
+				return `<details class="knowledge-item service-guide"><summary>${esc$4(item.question)}</summary><p class="tag">${kind.label}</p><p>${multiline(item.text)}</p><p class="small muted">来源：${esc$4(item.sourceLabel || "本店当前公开资料")} · 公开版 v${esc$4(p.version ?? 0)}</p>${ask$1("guide", item.id, item.question, item.question)}</details>`;
+			}).join("") : "<p class=\"small muted\">此阶段暂无本店公开说明，可带问题咨询管家。</p>"}</section>`;
+		}).join("");
+	}
+	function handbookMarkup(propertyId, snapshot) {
+		const p = publishedSnapshot(snapshot), guide = guideOf(p, propertyId), steps = publicGuideRecords(guide.steps, propertyId), media = publicGuideRecords(guide.media, propertyId);
+		let original = "";
+		if (propertyId === "qinghuan-dali") {
+			const knowledge = (p.knowledge ?? []).filter((item) => guestPublishedItem({
+				...item,
+				confirmation: void 0,
+				validFrom: null,
+				validUntil: null
+			}, propertyId)).map((item) => {
+				if (guestPublishedItem(item, propertyId)) return { ...item };
+				return {
+					...item,
+					requiresHuman: true,
+					text: "这道题的本店答复尚待商家确认，请向管家核对。"
+				};
+			});
+			const facts = Object.fromEntries(Object.entries(p.facts ?? {}).filter(([, item]) => guestPublishedItem(item, propertyId)));
+			const current = {
+				...p,
+				facts,
+				knowledge
+			};
+			const displayKnowledge = knowledge.map((item) => {
+				const response = answer({
+					propertyId,
+					visible: true,
+					published: current
+				}, item.question);
+				return {
+					...item,
+					text: response.body,
+					requiresHuman: response.status !== "answered"
+				};
+			});
+			original = guestHandbookMarkup(propertyId, displayKnowledge).replace(/<button class="text-btn service-ask" data-action="select-guide" data-knowledge="(Q\d{2})">[^<]*<\/button>/g, (button, id) => {
+				const item = displayKnowledge.find((k) => k.id === id);
+				return item ? `<p class="tag">${guideKind(item).label}</p>${ask$1("guide", id, item.question, `${id} · ${item.question}`)}` : "";
+			});
+		} else original = legacyHandbook(p, propertyId);
+		const extras = GUIDE_PHASES.map((phase) => {
+			const phaseSteps = steps.filter((s) => handbookPhase(s) === phase.id), phaseMedia = media.filter((m) => handbookPhase(m) === phase.id);
+			if (!phaseSteps.length && !phaseMedia.length) return "";
+			return `<section class="editor-group" data-guide-phase="${phase.id}"><h2>${phase.label} · 本店操作指引</h2>${phaseSteps.map((s) => `<article class="knowledge-item"><h3>${esc$4(s.title || "操作步骤")}</h3><p>${multiline(s.text)}</p>${source(s)}${ask$1("guide", s.id, "请说明：" + (s.title || s.text), s.title || "本店操作")}</article>`).join("")}${phaseMedia.map(mediaMarkup).join("")}</section>`;
+		}).join("");
+		return `<section class="stay-handbook"><p class="notice">入住前、入住中、退房后三阶段查找。规则说明条件，操作查看步骤；服务需求需管家确认，提交咨询不代表已办理。</p><a class="text-btn" href="#/guest/arrival">如何到店与停车 →</a>${original}${extras}</section>`;
+	}
+	const input = (prefix, key, label, value, type = "text") => `<label class="field">${label}<input type="${type}" name="${prefix}.${key}" value="${esc$4(value)}" ${type === "number" ? "step=\"any\"" : ""}/></label>`;
+	const area = (prefix, key, label, value) => `<label class="field">${label}<textarea name="${prefix}.${key}" rows="3">${esc$4(value)}</textarea></label>`;
+	const select = (prefix, key, label, value, options) => `<label class="field">${label}<select name="${prefix}.${key}">${options.map(([id, name]) => `<option value="${esc$4(id)}" ${String(value) === id ? "selected" : ""}>${esc$4(name)}</option>`).join("")}</select></label>`;
+	function metadata(prefix, record, p) {
+		const units = [
+			["", "本房源全部单元"],
+			...p.rentalMode === "whole" ? [["whole", "整院"]] : [],
+			...(p.rooms ?? []).map((room) => [room.id, room.name])
+		];
+		return `<details class="guide-record-metadata"><summary>来源、适用范围与有效期 · ${record.confirmation?.status === "confirmed" ? "已确认" : "待确认"}</summary>${input(prefix, "sourceLabel", "资料来源", record.sourceLabel)}${select(prefix, "unitId", "适用单元", record.unitId || "", units)}${select(prefix, "visibility", "可见范围", record.visibility || "public", [
+			["public", "公开访客"],
+			["stay", "仅获授权住客（本地原型不展示凭据）"],
+			["internal", "仅商家内部"]
+		])}${select(prefix, "enabled", "启用状态", record.enabled !== false ? "true" : "false", [["true", "启用"], ["false", "停用"]])}${input(prefix, "validFrom", "生效日期（可留空）", record.validFrom)}${input(prefix, "validUntil", "失效日期（可留空）", record.validUntil)}<p class="small muted">确认人：${esc$4(record.confirmation?.by || "待确认")}；确认日期：${esc$4(record.confirmation?.at || "待确认")}。修改内容或范围后须重新确认。</p></details>`;
+	}
+	function guideEditorMarkup(snapshot, propertyId) {
+		const p = snapshot?.draft ?? snapshot ?? {}, guide = experienceOf(p, propertyId).guide;
+		const steps = [...guide.steps ?? [], {}], media = [...guide.media ?? [], {}];
+		return `<form id="guide-editor-form" class="guide-editor"><h2>到店与住店指南</h2><p class="notice">修改仅保存为草稿。确认与发布另行操作，保存不会影响客人当前公开内容。请勿填写真实门锁、门禁或Wi-Fi密码、客人身份及订单资料，只写获授权后的获取方式。</p>${GUIDE_POINTS.map(({ id, label }) => {
+			const r = guide.points?.[id] ?? {}, prefix = `point.${id}`;
+			return `<fieldset class="editor-group"><legend>${label}</legend>${input(prefix, "address", "公开地址 / 地标", r.address)}${input(prefix, "lat", "纬度（无定位可留空）", r.lat, "number")}${input(prefix, "lng", "经度（无定位可留空）", r.lng, "number")}${select(prefix, "coordinate", "坐标系", r.coordinate || "gaode", [["gaode", "高德 GCJ-02"], ["wgs84", "GPS WGS84"]])}${metadata(prefix, r, p)}</fieldset>`;
+		}).join("")}<fieldset class="editor-group"><legend>图文操作步骤</legend><input type="hidden" name="steps.count" value="${steps.length}"/>${steps.map((r, i) => {
+			const prefix = `step.${i}`;
+			return `<details class="knowledge-item" ${i === steps.length - 1 ? "open" : ""}><summary>${i === steps.length - 1 ? "新增一条步骤" : esc$4(r.title || `步骤 ${i + 1}`)}</summary>${input(prefix, "title", "步骤标题", r.title)}${area(prefix, "text", "步骤说明（新增留空则不保存）", r.text)}${select(prefix, "phase", "入住阶段", r.phase || "arrival", GUIDE_PHASES.map((p) => [p.id, p.label]))}${metadata(prefix, r, p)}</details>`;
+		}).join("")}</fieldset><fieldset class="editor-group"><legend>图片、视频与外链</legend><input type="hidden" name="media.count" value="${media.length}"/>${media.map((r, i) => {
+			const prefix = `media.${i}`;
+			return `<details class="knowledge-item" ${i === media.length - 1 ? "open" : ""}><summary>${i === media.length - 1 ? "新增媒体" : esc$4(r.title || `媒体 ${i + 1}`)}</summary>${input(prefix, "title", "媒体标题", r.title)}${select(prefix, "type", "媒体类型", r.type || "video", [
+				["video", "视频"],
+				["image", "图片"],
+				["link", "外部参考链接"]
+			])}${input(prefix, "url", "公开链接（http/https）", r.url, "url")}${area(prefix, "text", "图文 / 加载失败时的说明", r.text)}${select(prefix, "phase", "入住阶段", r.phase || "arrival", GUIDE_PHASES.map((p) => [p.id, p.label]))}${metadata(prefix, r, p)}</details>`;
+		}).join("")}</fieldset><fieldset class="editor-group"><legend>迷路与服务联系出口</legend>${area("contact", "text", "联系获取方式、服务时段及非服务时段说明", guide.contact?.text)}${input("contact", "url", "获准公开的联系页面链接", guide.contact?.url, "url")}${metadata("contact", guide.contact ?? {}, p)}</fieldset><button type="submit" class="btn wide">保存指南草稿</button><p class="small muted">测试确认不代表真实店方确认。真实联系方式、定位和素材授权缺失时继续保留待补。</p></form>`;
+	}
+	//#endregion
+	//#region src/icons.mjs
+	const paths = {
+		home: "<path d=\"m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z\"/><path d=\"M9 21v-8h6v8\"/>",
+		house: "<path d=\"m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8\"/><path d=\"M17 3v4\"/>",
+		panorama: "<path d=\"M3 6c6 3 12 3 18 0v12c-6-3-12-3-18 0Z\"/><path d=\"m7 14 3-3 3 3 3-2 3 3\"/><circle cx=\"16\" cy=\"9\" r=\"1\"/>",
+		chat: "<path d=\"M21 11a8 8 0 0 1-8 8H8l-5 3v-7a8 8 0 0 1 8-12h2a8 8 0 0 1 8 8Z\"/><path d=\"M8 11h.01M12 11h.01M16 11h.01\"/>",
+		bed: "<path d=\"M3 18v3m18-3v3M3 18h18V11H3ZM5 11V5h14v6M7 11V8h4v3m2 0V8h4v3\"/>",
+		arrow: "<path d=\"M4 12h16m-6-6 6 6-6 6\"/>",
+		chevron: "<path d=\"m9 5 7 7-7 7\"/>",
+		back: "<path d=\"m15 5-7 7 7 7\"/>",
+		pin: "<path d=\"M19 9c0 6-7 12-7 12S5 15 5 9a7 7 0 0 1 14 0Z\"/><circle cx=\"12\" cy=\"9\" r=\"2.4\"/>",
+		leaf: "<path d=\"M20 3C7 2 2 8 5 15c3 7 14 6 15-12ZM4 21 15 10\"/>",
+		spark: "<path d=\"m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z\"/><path d=\"m21 2 .5 1.5L23 4l-1.5.5L21 6l-.5-1.5L19 4l1.5-.5Z\"/>",
+		parking: "<rect x=\"4\" y=\"3\" width=\"16\" height=\"18\" rx=\"3\"/><path d=\"M10 17V7h3a3 3 0 0 1 0 6h-3\"/>",
+		kitchen: "<path d=\"M4 3v6a3 3 0 0 0 6 0V3M7 3v18m12 0V3c-4 0-5 8-1 9h1\"/>",
+		clock: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>",
+		check: "<path d=\"m5 12 4 4L19 6\"/>",
+		close: "<path d=\"m6 6 12 12M6 18 18 6\"/>",
+		send: "<path d=\"m12 5 7 7m-7-7-7 7m7-7v15\"/>",
+		book: "<path d=\"M12 5v16M3 3h4a5 5 0 0 1 5 2 5 5 0 0 1 5-2h4v16h-4a5 5 0 0 0-5 2 5 5 0 0 0-5-2H3Z\"/>",
+		person: "<circle cx=\"12\" cy=\"7\" r=\"4\"/><path d=\"M4 21v-2a8 8 0 0 1 16 0v2\"/>",
+		users: "<circle cx=\"9\" cy=\"7\" r=\"3\"/><path d=\"M3 21v-3a6 6 0 0 1 12 0v3m1-17a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5v2\"/>",
+		bell: "<path d=\"M5 9a7 7 0 0 1 14 0v6l2 3H3l2-3Zm5 12h4\"/>",
+		edit: "<path d=\"m14 5 5 5M4 20l5-1L21 7l-5-5L4 14Z\"/>",
+		wifi: "<path d=\"M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-10 4a5 5 0 0 1 6 0\"/><circle cx=\"12\" cy=\"20\" r=\".6\"/>",
+		shield: "<path d=\"m12 2 8 3v6c0 6-8 11-8 11S4 17 4 11V5Z\"/><path d=\"m8 11 3 3 5-6\"/>",
+		external: "<path d=\"M14 3h7v7m0-7L10 14M10 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6\"/>",
+		plus: "<path d=\"M12 5v14M5 12h14\"/>",
+		refresh: "<path d=\"M20 7v5h-5M4 17v-5h5\"/><path d=\"M5 7a8 8 0 0 1 13-2l2 7M4 12l2 7a8 8 0 0 0 13-2\"/>",
+		expand: "<path d=\"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5\"/>",
+		image: "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"m3 16 6-6 7 7 3-3 2 2\"/><circle cx=\"16\" cy=\"8\" r=\"1\"/>",
+		more: "<circle cx=\"5\" cy=\"12\" r=\"1\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/>",
+		battery: "<rect x=\"2\" y=\"6\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M23 10v4M5 9h11v6H5Z\"/>",
+		signal: "<path d=\"M4 20v-4m5 4v-8m5 8V8m5 12V4\"/>",
+		heart: "<path d=\"M20 5a5 5 0 0 0-8 1 5 5 0 0 0-8-1c-5 5 3 12 8 16 5-4 13-11 8-16Z\"/>"
+	};
+	const icon = (name, cls = "") => `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.home}</svg>`;
+	//#endregion
+	//#region src/recommendations-ui.mjs
+	const esc$3 = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+		"&": "&amp;",
+		"<": "&lt;",
+		">": "&gt;",
+		"\"": "&quot;",
+		"'": "&#39;"
+	})[char]);
+	const periods = [
+		["all", "时间不限"],
+		["half", "半天"],
+		["day", "一天"]
+	];
+	const parties = [
+		["all", "同行不限"],
+		["family", "亲子同行"],
+		["couple", "两人同行"],
+		["senior", "长辈同行"],
+		["solo", "独自出行"]
+	];
+	const kinds = {
+		place: "地点",
+		route: "路线",
+		benefit: "权益说明"
+	};
+	const libraryButton = () => "<button class=\"btn secondary wide\" data-action=\"show-content-library\">完整资料搜索 · 85条记录与5条主题路线</button>";
+	const duration = (item) => Number.isFinite(item.durationMinutes) && item.durationMinutes > 0 ? `建议${item.durationMinutes}分钟` : "建议时长待补充";
+	const identity = (snapshot, item = {}) => {
+		const label = item.dataIdentity || snapshot.experience?.dataIdentity || "资料身份待确认";
+		return `<span class="tag">${esc$3(label)}${/测试|原型/.test(label) || /测试/.test(item.confirmation?.by || "") ? " · 演示确认" : ""}</span>`;
+	};
+	const unavailable$1 = () => `<div class="page-pad empty-state"><h1 class="page-title">这条推荐暂不可用</h1><p>未找到当前房源范围内已确认且仍有效的资料，请返回周边推荐重新选择。</p><button class="btn secondary wide" data-action="nav" data-route="guest/life">返回周边推荐</button></div>`;
+	function sourceMarkup(item, snapshot) {
+		const url = safeExternalUrl(item.sourceUrl);
+		return `<section class="content-section"><h2>资料来源</h2><p>${esc$3(item.sourceLabel || "来源待补充")}</p>${url ? `<a class="text-btn" href="${esc$3(url)}" target="_blank" rel="noopener noreferrer">查看原始来源 ${icon("external")}</a>` : ""}<p class="small muted">${esc$3(item.confirmation?.by || "确认人待补充")} · ${esc$3(item.confirmation?.at || "确认日期待补充")} · 公开资料 V${esc$3(snapshot.version ?? 0)}</p></section>`;
+	}
+	function navigationMarkup(item, scope) {
+		const nav = recommendationNavigation(item, scope);
+		return `<section class="content-section"><h2>位置与导航</h2><p>${esc$3(nav.address || "具体地址待补充，请向管家确认。")}</p>${nav.available && nav.url ? `<a class="btn secondary wide" href="${esc$3(nav.url)}" target="_blank" rel="noopener noreferrer">打开已确认地点导航 ${icon("external")}</a>` : "<p class=\"notice\">定位尚待核验，暂不提供导航入口。</p>"}${nav.address ? `<label class="field">地址可复制<input readonly aria-label="可复制的推荐地址" value="${esc$3(nav.address)}"></label><button class="text-btn" data-action="copy-recommendation-address" data-address="${esc$3(nav.address)}">复制地址</button>` : ""}<p class="small muted">导航无法打开时，可复制地址到地图中查询；实际出行前请确认开放及交通情况。</p></section>`;
+	}
+	function factsMarkup(item, snapshot, scope) {
+		return `<dl class="detail-grid"><div><dt>建议时长</dt><dd>${esc$3(duration(item))}</dd></div><div><dt>适用安排</dt><dd>${esc$3(periods.find(([id]) => id === item.period)?.[1] || "适用时段待确认")}</dd></div><div><dt>交通</dt><dd>${esc$3(recommendationTransport(item, snapshot, scope))}</dd></div><div><dt>预约</dt><dd>${esc$3(item.bookingConfirmed === true ? item.booking || "已核验，详细预约说明待补充" : "预约方式待核验，请出行前向场所确认。")}</dd></div><div><dt>费用</dt><dd>${esc$3(item.feeConfirmed === true ? item.fee || "费用已核验，详细价目待补充" : "费用待核验，原稿价格不作为当前报价。")}</dd></div></dl>`;
+	}
+	const askButton = (kind, id) => `<button class="btn wide" data-action="recommendation-ask" data-kind="${kind}" data-id="${esc$3(id)}">${icon("spark")} 带着这${kind === "route" ? "条路线" : "个地点"}问管家</button>`;
+	function recommendationRow(item, kind, snapshot, filters) {
+		return `<button class="content-row" data-action="recommendation-${kind}" data-id="${esc$3(item.id)}"><span>${identity(snapshot, item)}<strong>${esc$3(item.name)}</strong><span>${esc$3(recommendationReason(item, filters))}</span><small>${esc$3(duration(item))} · ${esc$3(item.address || "位置待补充")}</small><small>费用${item.feeConfirmed === true ? "已核验" : "待核验"} · 预约${item.bookingConfirmed === true ? "已核验" : "待核验"}</small></span>${icon("chevron")}</button>`;
+	}
+	function recommendationsMarkup(snapshot, scope, filters = {}) {
+		const selected = selectRecommendations(snapshot, scope, filters), current = selected.filters || filters;
+		const picks = selected.places.length || selected.routes.length;
+		return `<div class="page-pad recommendations-page"><h1 class="page-title">周边推荐</h1><form id="recommendation-filter" class="content-search"><label class="field">可以安排多久<select name="period">${periods.map(([id, label]) => `<option value="${id}" ${current.period === id ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="field">和谁一起去<select name="party">${parties.map(([id, label]) => `<option value="${id}" ${current.party === id ? "selected" : ""}>${label}</option>`).join("")}</select></label><button class="btn secondary wide" type="submit">看看适合的安排</button></form>${picks ? `${selected.places.length ? `<section class="content-section"><h2>精选地点</h2><div class="content-list">${selected.places.map((item) => recommendationRow(item, "place", snapshot, current)).join("")}</div></section>` : ""}${selected.routes.length ? `<section class="content-section"><h2>适合这次出行的路线</h2><div class="content-list">${selected.routes.map((item) => recommendationRow(item, "route", snapshot, current)).join("")}</div></section>` : ""}` : `<div class="empty-state"><h2>暂无已核实推荐</h2><p>${esc$3(selected.emptyReason || "当前没有符合时间与同行偏好的已确认公开资料，管家补充并发布后会显示在这里。")}</p></div>`}${libraryButton()}<p class="small muted">原稿资料保留来源与待核验说明；原稿中的价格、营业与预约线索需另行确认。</p></div>`;
+	}
+	function recommendedPlaceMarkup(id, snapshot, scope) {
+		const place = recommendedPlaceById(id, snapshot, scope);
+		if (!place) return unavailable$1();
+		const benefits = recommendationBenefits(snapshot, scope, place.id);
+		return `<div class="page-pad content-detail"><h1 class="page-title">${esc$3(place.name)}</h1>${identity(snapshot, place)}<p>${esc$3(place.description || "地点介绍待补充。")}</p>${place.parentPlaceId ? "<p class=\"notice\">此条为场所内的子空间，开放范围与使用资格以该空间说明为准。</p>" : ""}${factsMarkup(place, snapshot, scope)}${navigationMarkup(place, scope)}${benefits.length ? `<section class="content-section"><h2>相关权益说明</h2>${benefits.map((item) => `<article class="knowledge-item"><h3>${esc$3(item.name)}</h3><p>${esc$3(item.description || "使用条件请向场所确认。")}</p>${identity(snapshot, item)}<p class="small muted">来源：${esc$3(item.sourceLabel || "来源待补充")}</p></article>`).join("")}</section>` : ""}${askButton("place", place.id)}${sourceMarkup(place, snapshot)}<p class="content-disclaimer">本页只说明资料，没有发起预约或服务申请。</p></div>`;
+	}
+	function recommendedRouteMarkup(id, snapshot, scope) {
+		const route = recommendedRouteById(id, snapshot, scope);
+		if (!route) return unavailable$1();
+		const stops = route.placeIds.map((placeId) => recommendedPlaceById(placeId, snapshot, scope));
+		return `<div class="page-pad content-detail"><h1 class="page-title">${esc$3(route.name)}</h1>${identity(snapshot, route)}<p>${esc$3(route.description || "路线说明待补充。")}</p><p class="notice">此路线按自身${route.period === "half" ? "半天" : route.period === "day" ? "一天" : "已确认"}安排展示，请结合往返交通和同行体力核实。</p>${factsMarkup(route, snapshot, scope)}<section class="content-section"><h2>路线中的地点</h2><ol class="content-itinerary">${stops.map((place) => `<li><button class="content-stop" data-action="recommendation-place" data-id="${esc$3(place.id)}"><strong>${esc$3(place.name)}</strong>${icon("chevron")}</button><p>${esc$3(place.address || "地点地址待补充")} · ${esc$3(duration(place))}</p></li>`).join("")}</ol></section>${navigationMarkup(route, scope)}${askButton("route", route.id)}${sourceMarkup(route, snapshot)}<p class="content-disclaimer">路线建议不代表各站已预约；未核实的费用与开放条件仍需出行前确认。</p></div>`;
+	}
+	const localDateValue = (value) => {
+		if (!value) return "";
+		const date = new Date(value);
+		return Number.isFinite(+date) ? (/* @__PURE__ */ new Date(+date - date.getTimezoneOffset() * 6e4)).toISOString().slice(0, 16) : "";
+	};
+	const textField = (name, label, value = "", type = "text") => `<label class="field">${label}<input name="${name}" type="${type}" value="${esc$3(type === "datetime-local" ? localDateValue(value) : value)}" ${type === "number" ? "step=\"any\"" : ""}></label>`;
+	const checkField = (name, label, checked) => `<label class="field"><span><input type="checkbox" name="${name}" ${checked ? "checked" : ""}> ${label}</span></label>`;
+	function recommendationEditorMarkup(snapshot, pid, { kind = "place", id = null } = {}) {
+		if (!Object.hasOwn(kinds, kind)) kind = "place";
+		const content = experienceOf(snapshot, pid).recommendations;
+		const record = id ? content[kind === "place" ? "places" : kind === "route" ? "routes" : "benefits"].find((item) => item.id === id && item.propertyId === pid) : null;
+		if (id && !record) return "<div class=\"empty-state\"><h2>这条维护资料不存在</h2><p>请返回当前房源的推荐清单重新选择。</p></div>";
+		const r = record || {
+			enabled: true,
+			visibility: "public",
+			party: [],
+			period: "half"
+		};
+		return `<section class="recommendation-editor"><h2>精选与来源维护</h2><p class="notice">保存后成为待确认草稿；测试确认不会代表真实经营方核验，公开发布另行操作。</p>${Object.entries(kinds).map(([itemKind, label]) => {
+			return `<section class="editor-group"><h2>${label}资料</h2>${(content[itemKind === "place" ? "places" : itemKind === "route" ? "routes" : "benefits"] || []).filter((item) => item.propertyId === pid).map((item) => `<button class="fact-row" data-action="edit-recommendation" data-kind="${itemKind}" data-id="${esc$3(item.id)}"><span>${esc$3(item.name || "名称待补充")} · ${item.enabled === false ? "已停用" : item.confirmation?.status === "confirmed" ? "已确认草稿" : "待确认"}</span>${icon("chevron")}</button>`).join("")}<button class="text-btn" data-action="new-recommendation" data-kind="${itemKind}">${icon("plus")} 新增${label}</button></section>`;
+		}).join("")}<form id="recommendation-form"><input type="hidden" name="id" value="${esc$3(r.id || "")}"><label class="field">资料类型<select name="kind">${Object.entries(kinds).map(([key, label]) => `<option value="${key}" ${key === kind ? "selected" : ""}>${label}</option>`).join("")}</select></label>${textField("name", "名称", r.name)}<label class="field">介绍与适用条件<textarea name="description" maxlength="1000">${esc$3(r.description || "")}</textarea></label>${textField("address", "地点或路线位置", r.address)}${textField("lat", "已核实定位纬度（未核留空）", r.lat ?? "", "number")}${textField("lng", "已核实定位经度（未核留空）", r.lng ?? "", "number")}${textField("durationMinutes", "建议时长（分钟）", r.durationMinutes ?? "", "number")}<label class="field">适用时长<select name="period">${periods.filter(([key]) => key !== "all").map(([key, label]) => `<option value="${key}" ${key === r.period ? "selected" : ""}>${label}</option>`).join("")}</select></label><fieldset class="editor-group"><legend>适合同伴（只勾选已了解的条件）</legend>${parties.filter(([key]) => key !== "all").map(([key, label]) => `<label><input type="checkbox" name="party" value="${key}" ${(r.party || []).includes(key) ? "checked" : ""}> ${label}</label>`).join("")}</fieldset>${textField("transport", "交通说明", r.transport)}${checkField("transportConfirmed", "交通说明已逐项核验", r.transportConfirmed === true)}${textField("booking", "预约方式", r.booking)}${checkField("bookingConfirmed", "预约方式已逐项核验", r.bookingConfirmed === true)}${textField("fee", "费用及计价条件", r.fee)}${checkField("feeConfirmed", "费用及单位已逐项核验", r.feeConfirmed === true)}${textField("sourceLabel", "资料来源", r.sourceLabel)}${textField("sourceUrl", "原始来源网址（选填）", r.sourceUrl, "url")}${textField("unitId", "仅适用出租单元ID（留空为本房源）", r.unitId)}${textField("placeIds", "路线站点或权益适用地点ID（逗号分隔）", (r.placeIds || [r.placeId].filter(Boolean)).join(","))}${textField("parentPlaceId", "所属场所ID（子空间选填）", r.parentPlaceId)}<label class="field">可公开范围<select name="visibility">${[
+			["public", "公开资料"],
+			["resident", "入住专属"],
+			["internal", "内部资料"]
+		].map(([key, label]) => `<option value="${key}" ${key === r.visibility ? "selected" : ""}>${label}</option>`).join("")}</select></label>${textField("validFrom", "生效时间（选填）", r.validFrom || "", "datetime-local")}${textField("validUntil", "失效时间（选填）", r.validUntil || "", "datetime-local")}${checkField("enabled", "启用此条资料", r.enabled !== false)}${checkField("cancelled", "活动已取消／权益已取消", r.cancelled === true)}<button class="btn secondary wide" type="submit">保存推荐草稿</button></form></section>`;
+	}
+	//#endregion
+	//#region src/property-ui.mjs
+	const esc$2 = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
+		"&": "&amp;",
+		"<": "&lt;",
+		">": "&gt;",
+		"\"": "&quot;",
+		"'": "&#39;"
+	})[c]);
+	const button = (label, route) => `<button class="btn secondary" data-action="nav" data-route="${route}">${label}</button>`;
+	const field = (label, name, value = "", required = true) => `<label class="field">${label}<input name="${name}" value="${esc$2(value)}" maxlength="100" ${required ? "required" : ""}></label>`;
+	function propertyFormMarkup() {
+		return `<div class="page-pad"><h1 class="page-title">新增房源</h1><p class="notice">本阶段使用测试资料。真实房源、规则和媒体须由授权人确认，新增不会自动对客发布。</p><form id="new-property-form">${field("房源名称", "name")}${field("位置与地区", "location")}<label class="field">出租方式<select name="rentalMode"><option value="pending">待确认</option><option value="room">按间出租</option><option value="whole">整院包栋</option></select></label><label class="field">城市<select name="city"><option value="pending">地区待确认</option><option value="dali">大理</option><option value="moganshan">莫干山</option></select></label><button class="btn wide" type="submit">创建房源草稿</button></form></div>`;
+	}
+	function unitManagerMarkup(state) {
+		const d = state.draft;
+		return `<div class="page-pad"><h1 class="page-title">房间与公共空间</h1><p class="notice">${esc$2(d.name)} · 以下为草稿，保存不会改变客人端。停用与出租方式变更需确认发布后生效。</p><form id="rental-mode-form"><label class="field">出租方式<select name="rentalMode">${[
+			["pending", "待确认"],
+			["room", "按间出租"],
+			["whole", "整院包栋"]
+		].map(([k, v]) => `<option value="${k}" ${d.rentalMode === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>${field("整院建议入住人数", "wholeCapacity", d.wholeCapacity || "", false)}<button class="btn secondary wide">保存出租方式草稿</button></form><div class="section-title"><h2>卧室 · ${d.rooms.length}</h2></div>${button("新增房间", "merchant/room-edit/new")}${d.rooms.map((r) => `<article class="knowledge-item"><h3>${esc$2(r.name)} · ${r.enabled === false ? "已停用（草稿）" : "启用"}</h3><p>${esc$2(r.beds)} · ${esc$2(r.capacity)}</p>${button("编辑房间", "merchant/room-edit/" + r.id)}</article>`).join("")}${!d.rooms.length ? "<p class=\"notice\">尚未填写房间，不会自动复制示例卧室。</p>" : ""}<div class="section-title"><h2>公共空间</h2></div>${button("新增公共空间", "merchant/space-edit/new")}${(d.spaces || []).map((r) => `<article class="knowledge-item"><h3>${esc$2(r.name)} · ${r.enabled === false ? "已停用（草稿）" : "启用"}</h3>${button("编辑空间", "merchant/space-edit/" + r.id)}</article>`).join("")}<div class="section-title"><h2>检查并发布</h2></div>${button("返回民宿资料", "merchant/editor")}</div>`;
+	}
+	function roomFormMarkup(state, id) {
+		const r = id === "new" ? {
+			name: "",
+			type: "",
+			floor: "",
+			area: "",
+			beds: "",
+			capacity: "",
+			bath: "",
+			description: "",
+			facilities: []
+		} : state.draft.rooms.find((r) => r.id === id);
+		if (!r) return "<div class=\"page-pad\"><p>房间不存在，请返回重新选择。</p></div>";
+		return `<div class="page-pad"><h1 class="page-title">${id === "new" ? "新增房间" : "编辑房间"}</h1><form id="unit-room-form" data-id="${esc$2(id)}">${[
+			["name", "房间名称"],
+			["type", "房型"],
+			["floor", "所在楼层"],
+			["area", "面积"],
+			["beds", "床型"],
+			["capacity", "建议入住人数"],
+			["bath", "卫浴"]
+		].map(([k, l]) => field(l, k, r[k] || "")).join("")}${field("设施（逗号分隔）", "facilities", (r.facilities || []).join("，"), false)}<label class="field">房间介绍<textarea name="description" maxlength="500">${esc$2(r.description)}</textarea></label><label class="field">状态<select name="enabled"><option value="true" ${r.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${r.enabled === false ? "selected" : ""}>停用</option></select></label><button class="btn wide" type="submit">保存房间草稿</button></form></div>`;
+	}
+	function spaceFormMarkup(state, id) {
+		const r = id === "new" ? {} : state.draft.spaces?.find((r) => r.id === id);
+		if (!r) return "<div class=\"page-pad\">空间不存在，请返回重新选择。</div>";
+		return `<div class="page-pad"><h1 class="page-title">${id === "new" ? "新增公共空间" : "编辑公共空间"}</h1><form id="unit-space-form" data-id="${esc$2(id)}">${field("空间名称", "name", r.name || "")}<label class="field">规则分类<select name="key">${[
+			["environment", "公共环境"],
+			["kitchen", "厨房"],
+			["parking", "停车"],
+			["wifi", "网络设施"]
+		].map(([k, l]) => `<option value="${k}" ${r.key === k ? "selected" : ""}>${l}</option>`).join("")}</select></label><label class="field">空间说明<textarea name="description" maxlength="500">${esc$2(r.description)}</textarea></label><label class="field">状态<select name="enabled"><option value="true" ${r.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${r.enabled === false ? "selected" : ""}>停用</option></select></label><button class="btn wide" type="submit">保存公共空间草稿</button></form></div>`;
+	}
+	//#endregion
 	//#region src/local-life.mjs
 	const day = 864e5;
 	const clone$1 = (x) => structuredClone(x);
@@ -5810,14 +6381,6 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		if (typeof s !== "string" || !s.trim() || s.trim().length > max) throw Error(`请填写${label}（1—${max}字）`);
 		return s.trim();
 	};
-	const stamp = (t) => new Intl.DateTimeFormat("zh-CN", {
-		month: "numeric",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		hour12: false,
-		timeZone: "Asia/Shanghai"
-	}).format(t);
 	const LIFE_PLACES = [
 		{
 			id: "food",
@@ -5917,60 +6480,6 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	function eventsFor(life, cityId, { now = Date.now(), all = false } = {}) {
 		return Object.values(life.events).filter((e) => e.cityId === cityId && (all || !["cancelled", "ended"].includes(eventStatus(e, now)))).sort((a, b) => a.start - b.start);
-	}
-	function lifeAnswer(life, question, cityId, { now = Date.now(), propertyId, context = null } = {}) {
-		const q = clean(question, "问题", 1e3);
-		const contentReply = answerContent(q, {
-			propertyId,
-			cityId,
-			context
-		});
-		if (contentReply) return contentReply;
-		if (cityId !== "dali") return {
-			status: "no_data",
-			mode: "demo",
-			body: "当前房源所在城市还没有本地生活资料。大理示例活动不会默认推荐到这里，可以切换到大理示例房源体验。",
-			refs: []
-		};
-		let body = "", refs = [];
-		if (/活动|市集|扎染|音乐|周末|今天|明天|最近|这几天/.test(q)) {
-			let events = eventsFor(life, cityId, { now });
-			if (/今天|明天/.test(q)) {
-				const t = new Date(now);
-				t.setHours(0, 0, 0, 0);
-				const from = +t + (/明天/.test(q) ? day : 0);
-				events = events.filter((e) => e.start < from + day && e.end >= from);
-			}
-			if (events.length) {
-				body = "以下来自当前活动资料库，示例内容仅用于演示：\n\n" + events.map((e) => `${e.title}${e.isDemo ? "（示例）" : "（人工录入，未核验）"}\n${stamp(e.start)} · ${e.location}\n${e.price}\n来源：${e.sourceName}`).join("\n\n");
-				refs = events.map((e) => ({
-					id: e.id,
-					label: e.title,
-					source: e.sourceName,
-					updatedAt: e.updatedAt
-				}));
-			} else body = "当前资料库没有符合这个时间的可用活动。已取消或已结束的活动不会继续推荐；尚未连接真实小程序来源，不能保证实时完整。";
-		} else if (/吃|喝|餐|咖啡|美食|小吃|素食|清淡/.test(q)) {
-			body = "可以从云南小吃、家常菜、咖啡茶饮几个方向安排。当前是大理本地生活演示，尚无已核验的具体商家、价格和营业时间。\n\n你可以补充所在区域、预算、是否带娃，我会在真实服务接入后结合来源进一步推荐。";
-			refs = [{
-				id: "food-demo",
-				label: "大理吃喝示例资料",
-				source: "原型示例资料"
-			}];
-		} else if (/玩|散步|路线|游|亲子|娃|骑行|半天/.test(q)) {
-			body = "示例安排：留半天在洱海沿线轻松散步，或选择古城街巷和手作体验。具体开放、天气、交通与报名情况需出发前核实。\n\n这是玩法方向演示，不是已核验的实时行程。";
-			refs = [{
-				id: "play-demo",
-				label: "大理游玩示例资料",
-				source: "原型示例资料"
-			}];
-		} else body = "我可以帮你了解大理的吃喝、游玩和本地活动。试试问“最近有什么活动”“附近有什么好吃的”或“带孩子半天怎么玩”。目前是本地示例问答，豆包等真实AI尚未接入。";
-		return {
-			status: "answered",
-			mode: "demo",
-			body,
-			refs
-		};
 	}
 	function saveEvent(life, input, now = Date.now()) {
 		const title = clean(input.title, "活动名称", 100), location = clean(input.location, "活动地点"), sourceName = clean(input.sourceName, "活动来源");
@@ -6453,22 +6962,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	function activityCard(a) {
 		return `<button class="activity-card" data-action="life-event" data-event="${e$1(a.id)}"><div class="activity-date"><strong>${new Date(a.start).getDate()}</strong><span>${new Date(a.start).getMonth() + 1}月</span></div><span class="activity-copy"><span class="activity-meta">${e$1(a.category)} · ${badge(a)} · ${statusLabel(a)}</span><strong>${e$1(a.title)}</strong><small>${e$1(dateText(a.start))} · ${e$1(a.location)}</small><small>${e$1(a.price)}</small></span>${icon("chevron")}</button>`;
 	}
-	function lifeChat(life, city, messages, scope = {}) {
-		const qinghuan = !!contentFor(scope.propertyId, scope.cityId);
-		const rendered = messages.map((m) => `<article class="message ${m.role === "guest" ? "guest" : "assistant"}">${m.role === "assistant" ? `<span class="message-avatar">${icon("leaf")}</span>` : ""}<div class="message-content">${m.role === "assistant" ? "<p class=\"message-name\">本地生活AI · 资料演示</p>" : ""}<div class="message-bubble">${m.contextLabel ? `<span class="message-context">关于 ${e$1(m.contextLabel)}</span>` : ""}${e$1(m.body)}</div>${m.refs?.length ? `<details class="life-chat-ref content-sources"><summary>${icon("book")} 查看资料出处 · ${m.mode === "source_preview" ? "原稿待核验" : "示例/待核验资料"}</summary>${m.refs.map((r) => `<p><strong>${e$1(r.label)}</strong><br>${e$1(r.source || "来源待补充")}${r.version ? `<br>资料版本：${e$1(r.version)}` : ""}</p>`).join("")}</details>` : ""}</div></article>`).join("");
-		const welcome = `<div class="welcome"><div class="ai-avatar">${icon("leaf")}</div><h1>在${e$1(city.name)}，<br><span>想怎么度过这几天？</span></h1><p>${qinghuan ? "可按清欢原稿了解地点、五条主题路线和活动来源线索。营业、价格、交通与预约仍待核验。" : "了解吃喝、安排轻松游玩，也看看最近的活动。这里的问答与民宿入住规则分开。"}</p></div><div class="suggested">${(qinghuan ? [
-			"带孩子只有半天怎么玩",
-			"下雨了，不想爬山，去哪玩",
-			"有哪些活动来源线索"
-		] : [
-			"最近有什么本地活动",
-			"附近有什么好吃的",
-			"带孩子半天怎么玩"
-		]).map((q) => `<button data-action="life-prefill" data-question="${e$1(q)}">${e$1(q)}${icon("arrow")}</button>`).join("")}</div><p class="chat-tip">${qinghuan ? "从地点或路线进入可保留所选对象；发送后查看资料出处。" : "活动会显示来源与时间；没有实时资料时会直接说明。"}</p>`;
-		return `<div class="chat-info">${icon("spark")} ${qinghuan ? "清欢原稿 · 本地资料问答" : e$1(city.name) + "本地生活 · 本地示例问答"} · 豆包接口待接入</div><div class="phone-body chat-body"><div class="chat-scroll">${messages.length ? rendered : welcome}</div></div>`;
-	}
-	function lifeComposer(draft, contextMarkup = "") {
-		return `<form id="life-chat-form" class="chat-composer">${contextMarkup}<div class="composer-row"><textarea id="life-chat-input" aria-label="输入本地生活问题" placeholder="问吃喝、游玩、本地活动…" maxlength="1000" rows="1">${e$1(draft)}</textarea><button class="send-button" type="submit" aria-label="发送本地生活问题" ${draft.trim() ? "" : "disabled"}>${icon("send")}</button></div><p class="composer-note">本地资料问答演示 · 豆包与真实活动来源待接入</p></form>`;
+	function lifeComposer(draft, contextMarkup = "", disabled = false) {
+		return `<form id="life-chat-form" class="chat-composer">${contextMarkup}<div class="composer-row"><textarea id="life-chat-input" ${disabled ? "disabled" : ""} aria-label="输入本地生活问题" placeholder="问吃喝、游玩、本地活动…" maxlength="1000" rows="1">${e$1(draft)}</textarea><button class="send-button" type="submit" aria-label="发送本地生活问题" ${!disabled && draft.trim() ? "" : "disabled"}>${icon("send")}</button></div><p class="composer-note">本地资料问答演示 · 豆包与真实活动来源待接入</p></form>`;
 	}
 	function eventsPreviewMarkup(life, city) {
 		const events = eventsFor(life, city.id);
@@ -6633,6 +7128,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	let returnFocus = null;
 	let lifeDraft = "";
 	let lifeContext = null;
+	let lifePrevious = null;
 	let contentTab = "places";
 	let contentCategory = "all";
 	let contentQuery = "";
@@ -6684,8 +7180,8 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	setActive();
 	const draftKey = () => "minsu-mini-composer-v040:" + activePropertyId + ":" + (target.unitId || "all");
-	const lifeDraftKey = () => `minsu-life-draft:${activePropertyId}`;
-	const lifeContextKey = () => `minsu-life-context:${activePropertyId}`;
+	const lifeDraftKey = () => `minsu-life-draft:${activePropertyId}:${target.unitId || "all"}`;
+	const lifeContextKey = () => `minsu-life-context:${activePropertyId}:${target.unitId || "all"}`;
 	try {
 		sessionId = sessionStorage.getItem(SESSION);
 		if (!sessionId) {
@@ -6693,8 +7189,9 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			sessionStorage.setItem(SESSION, sessionId);
 		}
 		composer = JSON.parse(sessionStorage.getItem(draftKey()) || "null") || composer;
-		lifeDraft = sessionStorage.getItem(lifeDraftKey()) || (activePropertyId !== "qinghuan-dali" ? sessionStorage.getItem("minsu-life-draft") : "") || "";
-		lifeContext = JSON.parse(sessionStorage.getItem(lifeContextKey()) || "null");
+		lifeDraft = sessionStorage.getItem(lifeDraftKey()) || (!target.unitId ? sessionStorage.getItem("minsu-life-draft:" + activePropertyId) : "") || "";
+		lifeContext = JSON.parse(sessionStorage.getItem(lifeContextKey()) || (!target.unitId ? sessionStorage.getItem("minsu-life-context:" + activePropertyId) : "") || "null");
+		lifePrevious = JSON.parse(sessionStorage.getItem(lifeDraftKey() + ":previous") || "null");
 	} catch {
 		sessionId = null;
 		storageError = "浏览器无法保留会话，暂时不能发送问题。请启用浏览器存储后刷新。";
@@ -6704,6 +7201,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	const page = () => customerPreview && parts()[0] && parts()[0] !== "guest" ? "home" : parts()[1] || "home";
 	const guestSession = () => sessionId ? activePropertyId === "legacy" && !target.unitId ? sessionId : sessionId + ":" + activePropertyId + ":" + (target.unitId || "all") : null;
 	const currentThread = () => guestThreads(state, guestSession())[0];
+	const canReadOwnHistory = () => target.propertyId === activePropertyId && !!currentThread();
 	const currentEntry = () => workspace.properties[activePropertyId];
 	const currentCity = () => currentEntry().city;
 	const lifeScope = () => ({
@@ -6717,17 +7215,25 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	}
 	function lifeContextMarkup() {
 		const c = validLifeObject(lifeContext);
+		if (!c && lifeContext) return `<div class="composer-context"><span>原提问对象暂不可用</span><button type="button" data-action="clear-life-context">移除</button></div>`;
 		return c?.collection === "recommendations" ? `<div class="composer-context"><span>正在问：${esc(c.label)}</span><button type="button" data-action="clear-life-context" aria-label="移除本地生活对象">移除</button></div>` : contentContextChip(lifeContext, lifeScope());
 	}
 	function saveLifeDraft() {
 		try {
 			sessionStorage.setItem(lifeDraftKey(), lifeDraft);
 			sessionStorage.setItem(lifeContextKey(), JSON.stringify(lifeContext));
+			sessionStorage.setItem(lifeDraftKey() + ":previous", JSON.stringify(lifePrevious));
 		} catch {}
 	}
 	function goLifeChat(body = "", context = null) {
-		lifeDraft = body;
-		lifeContext = validLifeObject(context);
+		const next = selectDraft({
+			body: lifeDraft,
+			context: lifeContext,
+			previous: lifePrevious
+		}, body || void 0, validLifeObject(context));
+		lifeDraft = next.body;
+		lifeContext = next.context;
+		lifePrevious = next.previous || null;
 		saveLifeDraft();
 		go("guest/life-chat");
 	}
@@ -6820,8 +7326,13 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		else location.hash = h;
 	}
 	function goChat(body = "", context = null) {
-		if (body) composer.body = body;
-		if (context) composer.context = context;
+		const normalized = context ? {
+			...context,
+			propertyId: activePropertyId,
+			version: state.published.version,
+			label: context.label || state.published.rooms.find((r) => r.id === context.roomId)?.name || context.spaceName || "本店资料"
+		} : null;
+		composer = selectDraft(composer, body || void 0, normalized);
 		saveComposer();
 		go("guest/chat");
 	}
@@ -7236,7 +7747,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return `<nav class="demo-entry-switch" aria-label="切换演示端"><span>演示切换</span>${[["guest", "客人端"], ["merchant", "商家端"]].map(([key, label]) => `<button type="button" data-action="role" data-role="${key}" aria-pressed="${currentRole === key}">${label}</button>`).join("")}</nav>`;
 	}
 	function render() {
-		const r = role(), p = page(), info = headerInfo(), chat = r === "guest" && p === "chat" && target.ok, localChat = r === "guest" && p === "life-chat" && target.ok, noTabs = chat || localChat || p === "vr" || p === "room" || p === "space" || [
+		const r = role(), p = page(), info = headerInfo(), chat = r === "guest" && p === "chat" && (target.ok || canReadOwnHistory()), localChat = r === "guest" && p === "life-chat" && (target.ok || canReadOwnHistory()), noTabs = chat || localChat || p === "vr" || p === "room" || p === "space" || [
 			"ticket",
 			"knowledge-edit",
 			"queue",
@@ -7249,7 +7760,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		lastRoute = location.hash;
 		document.body.classList.toggle("customer-preview", customerPreview);
 		document.body.classList.toggle("mobile-presentation", mobilePresentation());
-		$("#app").innerHTML = `<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTciIGZpbGw9IiMyNDRmNDAiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmNmY2ZWUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTMgMzEgMzIgMTVsMTkgMTZNMTkgMjh2MjJoMjZWMjhNMjggNTBWMzZoOHYxNCIvPjxwYXRoIGQ9Ik00MiAxNnY3Ii8+PC9nPjwvc3ZnPgo=" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.4.3</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon("house")} 小程序风格演示 <strong>· ${r === "guest" ? "客人端" : r === "merchant" ? "商家端" : "平台端"}</strong></span><span>${mobileOpen ? "收起讲解" : "演示控制"} ${icon(mobileOpen ? "close" : "more")}</span></button><main class="workspace">${mobilePresentation() ? "" : narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${target.ok || r !== "guest" ? esc(state.published.name) : "看房链接失效"} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon("signal")}${icon("wifi")}${icon("battery")}</span></div><header class="mini-header"><div class="mini-title">${info.back ? `<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon("back")}</button>` : ""}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation() && !customerPreview ? "演示入口与说明" : "小程序演示说明"}">${icon("more")}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError ? `<div class="error-banner">${esc(storageError)}</div>` : ""}${localChat ? lifeChat(workspace.life, currentCity(), lifeMessages(), lifeScope()) : chat ? renderChat() : `<div class="phone-body ${p === "vr" && r === "guest" ? "vr-body" : ""}" id="phone-scroll">${content()}</div>`}${noTabs ? "" : tabbar()}${localChat ? lifeComposer(lifeDraft, lifeContextMarkup()) : chat ? composerView() : r === "merchant" && p === "editor" ? editorActions() : ""}${r === "guest" && ["room", "space"].includes(p) ? detailActions() : ""}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
+		$("#app").innerHTML = `<header class="workspace-header"><a class="brand" href="#/guest/home"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTciIGZpbGw9IiMyNDRmNDAiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmNmY2ZWUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTMgMzEgMzIgMTVsMTkgMTZNMTkgMjh2MjJoMjZWMjhNMjggNTBWMzZoOHYxNCIvPjxwYXRoIGQ9Ik00MiAxNnY3Ii8+PC9nPjwvc3ZnPgo=" alt="">民宿工具 <span>可交互演示原型</span></a><div class="header-right"><span><i class="live-dot"></i>交互演示 · v0.5 开发中</span><span>房源分享，看房咨询，本地生活</span></div></header><button class="mobile-demo-toggle" data-action="mobile-controls" aria-expanded="${mobileOpen}"><span>${icon("house")} 小程序风格演示 <strong>· ${r === "guest" ? "客人端" : r === "merchant" ? "商家端" : "平台端"}</strong></span><span>${mobileOpen ? "收起讲解" : "演示控制"} ${icon(mobileOpen ? "close" : "more")}</span></button><main class="workspace">${mobilePresentation() ? "" : narration()}<section class="stage" aria-label="可操作手机原型"><div class="stage-caption">${target.ok || r !== "guest" ? esc(state.published.name) : "看房链接失效"} <span>小程序体验</span></div><div class="phone"><div class="status-bar"><span>9:41</span><span class="status-icons">${icon("signal")}${icon("wifi")}${icon("battery")}</span></div><header class="mini-header"><div class="mini-title">${info.back ? `<button class="icon-btn" data-action="nav" data-route="${info.back}" aria-label="返回">${icon("back")}</button>` : ""}<span class="mini-title-text">${esc(info.title)}</span></div><button class="mini-capsule" data-action="about" aria-label="${mobilePresentation() && !customerPreview ? "演示入口与说明" : "小程序演示说明"}">${icon("more")}<span class="capsule-divider"></span><i class="capsule-circle"></i></button></header>${demoEntrySwitch(r)}${storageError ? `<div class="error-banner">${esc(storageError)}</div>` : ""}${chat || localChat ? renderChat() : `<div class="phone-body ${p === "vr" && r === "guest" ? "vr-body" : ""}" id="phone-scroll">${content()}</div>`}${noTabs ? "" : tabbar()}${localChat ? lifeComposer(lifeDraft, lifeContextMarkup() + (lifePrevious ? "<button type=\"button\" class=\"text-btn restore-draft\" data-action=\"restore-life-draft\">恢复上次未发送内容</button>" : ""), !target.ok || !state.visible || !sessionId) : chat ? composerView() : r === "merchant" && p === "editor" ? editorActions() : ""}${r === "guest" && ["room", "space"].includes(p) ? detailActions() : ""}<div class="home-indicator"></div></div><p class="stage-footer">在右侧直接操作 · 左侧讲解随页面变化</p></section></main>`;
 		if (chat || localChat) {
 			const c = $(".chat-scroll");
 			if (c) c.scrollTop = c.scrollHeight;
@@ -7267,7 +7778,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	function content() {
 		const r = role(), p = page();
 		if (r === "guest") {
-			if (!target.ok) return `<div class="page-pad"><div class="empty-state">${icon("house")}<h1 class="page-title">看房链接暂不可用</h1><p>${esc(target.message)}</p></div></div>`;
+			if (!target.ok) return `<div class="page-pad"><div class="empty-state">${icon("house")}<h1 class="page-title">看房链接暂不可用</h1><p>${esc(target.message)}</p>${canReadOwnHistory() ? btn("查看已有咨询记录", "nav", "secondary wide", `data-route="guest/chat"`) : ""}</div></div>`;
 			if (!state.visible) return `<div class="page-pad"><div class="empty-state">${icon("house")}<h2>民宿资料暂时停止展示</h2><p>请联系民宿管家确认。恢复展示后可继续看房和咨询。</p></div>${btn("查看已有咨询", "switch-chat", "secondary wide")}</div>`;
 			if (p === "life") return recommendationsMarkup(state.published, lifeScope(), recommendationFilters);
 			if (p === "recommended-place") return recommendedPlaceMarkup(parts()[2], state.published, lifeScope());
@@ -7439,28 +7950,46 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 	function detailActions() {
 		return `<div class="sticky-actions">${btn(icon("chat") + " 问问管家", "ask-detail", "wide")}</div>`;
 	}
+	function messageChatScope(message, thread) {
+		let item = message;
+		const seen = /* @__PURE__ */ new Set();
+		while (item && item.role !== "guest" && !seen.has(item.id)) {
+			seen.add(item.id);
+			item = thread.messages.find((x) => x.id === item.replyTo);
+		}
+		return item?.context?.scope === "local" ? "local" : "stay";
+	}
 	function renderChat() {
-		const t = currentThread(), messages = t?.messages || [];
-		return `<div class="chat-info">${icon("shield")} <span>${state.published.profilePending ? "清欢30问接待指引 · 店规待确认" : "只根据本店已公开资料回答 · 本地问答演示"}</span>${state.published.knowledge.some((k) => k.kind === "confirmation_guide") ? "<button class=\"text-btn\" data-action=\"question-library\">常见30问</button>" : ""}</div><div class="phone-body chat-body" id="phone-scroll"><div class="chat-scroll">${messages.length ? `<p class="chat-time">今天 ${time(messages[0].at)}</p>${!state.visible ? "<p class=\"chat-history-banner\">资料已暂停展示，保留历史对话；新的咨询暂不可发送。</p>" : ""}${messages.map((m) => message(m, t)).join("")}` : `<div class="welcome"><div class="ai-avatar">${icon("spark")}</div><h1>你好，我是小院管家。<br><span>这趟旅程，想了解什么？</span></h1><p>厨房能不能做饭，车停在哪里，房间适不适合你…<br>知道的告诉你，不确定的请管家确认。</p></div><div class="suggested">${(state.published.profilePending ? [
+		const t = currentThread(), local = page() === "life-chat", scope = local ? "local" : "stay", messages = (t?.messages || []).filter((m) => messageChatScope(m, t) === scope);
+		const suggestions = local ? [
+			"半天有哪些适合的安排",
+			"附近有什么好吃的",
+			"有哪些活动来源线索"
+		] : state.published.profilePending ? [
 			"从机场/高铁站怎么到院子？能安排接站吗？",
 			"自驾好停车吗？收费吗？有充电桩吗？",
-			"含早餐吗？可以自己做饭吗？",
-			"东西落在房间怎么办？能寄回吗？"
+			"含早餐吗？可以自己做饭吗？"
 		] : [
 			"厨房能做饭吗",
 			"怎么停车",
 			"几点可以入住",
 			"可以带宠物吗"
-		]).map((q) => `<button data-action="prefill" data-question="${q}">${q}${icon("arrow")}</button>`).join("")}</div><p class="chat-tip">先选一个问题，或在下方自由输入。<br>选择后可继续修改，点击发送才会提交。</p>`}</div></div>`;
+		];
+		const scopes = `<nav class="assistant-scopes" aria-label="AI问答范围"><button type="button" data-action="assistant-scope" data-scope="stay" aria-pressed="${!local}">本店管家</button><button type="button" data-action="assistant-scope" data-scope="local" aria-pressed="${local}">本地向导</button></nav>`;
+		const info = `<div class="chat-info">${icon("shield")}<span>${local ? "当前范围：周边推荐与原稿预览 · 未接豆包" : state.published.profilePending ? state.published.knowledge.some((k) => k.kind === "confirmation_guide") ? "当前范围：本店30问 · 店规待确认" : "当前范围：本店资料待补 · 请管家确认" : "当前范围：本店公开资料 · 本地问答演示"}</span>${!local && state.published.knowledge.some((k) => k.kind === "confirmation_guide") ? "<button class=\"text-btn\" data-action=\"question-library\">常见30问</button>" : ""}</div>`;
+		const welcome = `<div class="welcome"><div class="ai-avatar">${icon(local ? "leaf" : "spark")}</div><h1>${local ? "想了解周边，<br><span>这次准备怎么玩？</span>" : "你好，我是小院管家。<br><span>这趟旅程，想了解什么？</span>"}</h1><p>${local ? "仅按当前房源已发布精选或有出处的待核原稿说明。<br>咨询不代表已预约，费用和服务须另行确认。" : "厨房、停车、入住或服务需求。<br>知道的说明依据，不确定的请管家确认。"}</p></div><div class="suggested">${suggestions.map((q) => `<button data-action="${local ? "life-prefill" : "prefill"}" data-question="${esc(q)}">${esc(q)}${icon("arrow")}</button>`).join("")}</div><p class="chat-tip">先选择问题，或在下方输入。点击发送才会提交。<br>仅本浏览器演示，无真实模型或外部通知。</p>`;
+		const legacy = local && !target.unitId ? lifeMessages() : [];
+		const archive = legacy.length ? `<details class="legacy-chat"><summary>旧版本向导记录（只读）</summary><p>历史来源预览，不代表当前营业与服务状态。</p>${legacy.map((m) => `<p><strong>${m.role === "guest" ? "客人" : "旧版向导"}</strong>：${esc(m.body)}</p>`).join("")}</details>` : "";
+		return scopes + info + `<div class="phone-body chat-body" id="phone-scroll"><div class="chat-scroll">${messages.length ? `<p class="chat-time">今天 ${time(messages[0].at)}</p>${!state.visible || !target.ok ? "<p class=\"chat-history-banner\">资料已暂停展示，保留历史；新的咨询暂不可发送。</p>" : ""}${messages.map((m) => message(m, t)).join("")}` : welcome}${archive}</div></div>`;
 	}
 	function message(m, t) {
 		const ticket = Object.values(state.tickets).find((x) => x.messageId === m.id), human = m.role === "merchant", guest = m.role === "guest";
-		const context = m.context?.label || (m.context?.roomId ? state.published.rooms.find((r) => r.id === m.context.roomId)?.name : m.context?.spaceName);
-		return `<article class="message ${m.role}">${guest ? "" : `<span class="message-avatar">${icon(human ? "person" : "spark")}</span>`}<div class="message-content">${guest ? "" : `<p class="message-name">${human ? "民宿管家 · 人工回复" : "AI小院管家"}</p>`}<div class="message-bubble">${context ? `<span class="message-context">关于 ${esc(context)}</span>` : ""}${esc(m.body)}</div>${m.sources?.length ? `<button class="message-source" data-action="sources" data-thread="${t.id}" data-message="${m.id}">${icon("book")} 依据：${esc(m.sources.map((s) => s.label).join("、"))} <span>V${m.sources[0].version}${m.sources[0].version !== state.published.version ? " · 已更新" : ""}</span>${icon("chevron")}</button>` : ""}${m.knowledgeIds?.includes("Q19") ? `<button class="handoff-button" data-action="q19-life" data-thread="${t.id}" data-message="${m.id}">带着问题问本地生活AI</button>` : ""}${!guest && !human ? ticket ? `<p class="handoff-state">${icon(ticket.status === "replied" ? "check" : "clock")}${ticket.status === "replied" ? "管家已回复，见下方" : ticket.status === "processing" ? "管家已接手，等待人工回复" : "已交给管家，等待接手"}</p>` : `<button class="handoff-button" data-action="handoff" data-thread="${t.id}" data-message="${m.id}">${icon("person")} ${m.status === "needs_human" ? "请管家确认" : "继续请教人工管家"}</button>` : ""}</div></article>`;
+		const context = m.contextLabel || m.context?.label || (m.context?.roomId ? state.published.rooms.find((r) => r.id === m.context.roomId)?.name : m.context?.spaceName);
+		return `<article class="message ${m.role}">${guest ? "" : `<span class="message-avatar">${icon(human ? "person" : "spark")}</span>`}<div class="message-content">${guest ? "" : `<p class="message-name">${human ? "民宿管家 · 人工回复" : messageChatScope(m, t) === "local" ? "本地向导 · 资料演示" : "AI小院管家"}</p>`}<div class="message-bubble">${context ? `<span class="message-context">关于 ${esc(context)}</span>` : ""}${esc(m.body)}</div>${m.sources?.length ? `<button class="message-source" data-action="sources" data-thread="${t.id}" data-message="${m.id}">${icon("book")} 依据：${esc(m.sources.map((s) => s.label).join("、"))} <span>V${m.sources[0].version}${m.sources[0].version !== state.published.version ? " · 已更新" : ""}</span>${icon("chevron")}</button>` : ""}${m.knowledgeIds?.includes("Q19") ? `<button class="handoff-button" data-action="q19-life" data-thread="${t.id}" data-message="${m.id}">带着问题问本地生活AI</button>` : ""}${!guest && !human ? ticket ? `<p class="handoff-state">${icon(ticket.status === "replied" ? "check" : "clock")}${ticket.status === "replied" ? "管家已回复，见下方" : ticket.status === "processing" ? "管家已接手，等待人工回复" : "本机待办已生成，等待演示接手"}</p>` : `<button class="handoff-button" data-action="handoff" data-thread="${t.id}" data-message="${m.id}">${icon("person")} ${m.status === "needs_human" ? "请管家确认" : "继续请教人工管家"}</button>` : ""}</div></article>`;
 	}
 	function composerView() {
 		const context = composer.context?.label || (composer.context?.roomId ? state.published.rooms.find((r) => r.id === composer.context.roomId)?.name : composer.context?.spaceName);
-		return `<form id="chat-form" class="chat-composer">${context ? `<div class="composer-context"><span>${icon("bed")} 正在问：${esc(context)}</span><button type="button" data-action="clear-context" aria-label="移除空间上下文">${icon("close")}</button></div>` : ""}<div class="composer-row"><textarea id="chat-input" name="question" aria-label="输入想问管家的问题" placeholder="问问厨房、停车、入住…" maxlength="1000" rows="1" ${!sessionId || !state.visible ? "disabled" : ""}>${esc(composer.body)}</textarea><button class="send-button" type="submit" aria-label="发送问题" ${!composer.body.trim() || !sessionId || !state.visible ? "disabled" : ""}>${icon("send")}</button></div><p class="composer-note">AI为本地资料匹配演示 · 不确定的事由管家确认</p></form>`;
+		return `<form id="chat-form" class="chat-composer">${composer.previous ? "<button type=\"button\" class=\"text-btn restore-draft\" data-action=\"restore-chat-draft\">恢复上次未发送内容</button>" : ""}${context ? `<div class="composer-context"><span>${icon("bed")} 正在问：${esc(context)}</span><button type="button" data-action="clear-context" aria-label="移除提问对象">${icon("close")}</button></div>` : ""}<div class="composer-row"><textarea id="chat-input" name="question" aria-label="输入想问管家的问题" placeholder="问问厨房、停车、入住…" maxlength="1000" rows="1" ${!sessionId || !state.visible || !target.ok ? "disabled" : ""}>${esc(composer.body)}</textarea><button class="send-button" type="submit" aria-label="发送问题" ${!composer.body.trim() || !sessionId || !state.visible || !target.ok ? "disabled" : ""}>${icon("send")}</button></div><p class="composer-note">AI为本地资料匹配演示 · 不确定的事由管家确认</p></form>`;
 	}
 	function vr() {
 		return `<iframe class="vr-frame" title="第三方VR看房参考案例，非当前民宿" src="${esc(state.published.vrUrl)}" allow="fullscreen; gyroscope; accelerometer" referrerpolicy="no-referrer"></iframe><div class="vr-description"><p class="vr-loading">拖动全景探索空间，首次加载可能需要片刻。若长时间空白，请打开原站。</p><h1>${esc(state.published.vrDescription || "走进空间，感受一间民宿。")}</h1><p>当前使用指定的第三方VR参考案例，非当前民宿实拍。案例中的房间与设施不作为本店资料。</p><a class="btn secondary wide" href="${esc(state.published.vrUrl)}" target="_blank" rel="noopener noreferrer">${icon("external")} 打开VR原站</a><button class="text-btn" data-action="switch-chat">看完了，问问AI管家 ${icon("arrow")}</button><p class="vr-source">来源：途家 · 如视 Realsee<br>仅作体验参考 · 不绑定本店房间</p></div>`;
@@ -7477,6 +8006,37 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		return workspace.lifeChats[lifeChatKey(sessionId, currentCity().id, activePropertyId)] || [];
 	}
 	function handleExtraAction(a, b) {
+		if (a === "assistant-scope") {
+			saveComposer();
+			saveLifeDraft();
+			go(b.dataset.scope === "local" ? "guest/life-chat" : "guest/chat");
+			toast("已切换问答范围，另一范围的输入草稿仍保留。");
+			return true;
+		}
+		if (a === "restore-chat-draft") {
+			composer = restoreDraft(composer);
+			saveComposer();
+			render();
+			return true;
+		}
+		if (a === "restore-life-draft") {
+			const next = restoreDraft({
+				body: lifeDraft,
+				context: lifeContext,
+				previous: lifePrevious
+			});
+			lifeDraft = next.body;
+			lifeContext = next.context;
+			lifePrevious = null;
+			saveLifeDraft();
+			render();
+			return true;
+		}
+		if (a === "legacy-life-archive") {
+			const old = Object.entries(workspace.lifeChats || {}).filter(([key]) => key.startsWith(sessionId + ":"));
+			showDialog("旧版向导演示存档", `<p class="notice">仅保留本浏览器当前演示身份的历史。早期同城记录未标明房源，不自动归属任何店，也不用于当前回答。</p>${old.length ? old.map(([, rows]) => `<details><summary>一组旧版记录</summary>${rows.map((m) => `<p>${esc(m.body)}</p>`).join("")}</details>`).join("") : "<p>当前身份没有旧版向导存档。</p>"}`);
+			return true;
+		}
 		if (a === "guide-ask") {
 			goChat(b.dataset.question || "想了解这项入住指引", {
 				kind: b.dataset.kind || "guide",
@@ -7799,38 +8359,23 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			event.preventDefault();
 			const body = lifeDraft.trim();
 			if (!body) return true;
-			try {
-				if (!sessionId) throw Error("浏览器无法保留会话，请检查存储设置");
-				const reply = lifeAnswer(workspace.life, body, currentCity().id, {
-					...lifeScope(),
-					context: lifeContext
-				}), next = structuredClone(workspace), key = lifeChatKey(sessionId, currentCity().id, activePropertyId);
-				next.lifeChats[key] = [
-					...next.lifeChats[key] || [],
-					{
-						id: crypto.randomUUID(),
-						role: "guest",
-						body,
-						contextLabel: validContentContext(reply.context, lifeScope())?.label
-					},
-					{
-						id: crypto.randomUUID(),
-						role: "assistant",
-						body: reply.body,
-						refs: reply.refs,
-						mode: reply.mode
-					}
-				];
-				next.revision++;
-				if (saveWorkspace(next)) {
-					lifeDraft = "";
-					lifeContext = validContentContext(reply.context, lifeScope());
-					saveLifeDraft();
-					render();
-					$("#life-chat-input")?.focus({ preventScroll: true });
+			if (mutate({
+				type: "ASK",
+				body,
+				context: {
+					...lifeContext || {},
+					scope: "local",
+					propertyId: activePropertyId,
+					unitId: target.unitId || null,
+					cityId: currentCity().id
 				}
-			} catch (e) {
-				toast(e.message);
+			}, "guest")) {
+				const reply = currentThread()?.messages.at(-1);
+				lifeDraft = "";
+				lifeContext = reply?.resolvedContext ? validLifeObject(reply.resolvedContext) : null;
+				saveLifeDraft();
+				render();
+				$("#life-chat-input")?.focus({ preventScroll: true });
 			}
 			return true;
 		}
@@ -7871,7 +8416,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 			pending: "待接手",
 			processing: "处理中",
 			replied: "已回复"
-		}[t.status]}</span></span><h3>${esc(t.question)}</h3><p>${t.context?.roomId ? "关于：" + esc(state.published.rooms.find((r) => r.id === t.context.roomId)?.name || "房间") : t.context?.spaceName ? "关于：" + esc(t.context.spaceName) : "来自本店AI管家会话"}</p><span class="ticket-bottom"><span>${t.status === "replied" ? "查看人工答复" : "查看问题并回复"}</span>${icon("arrow")}</span></button>`;
+		}[t.status]}</span></span><h3>${esc(t.question)}</h3><p>${t.context?.label ? "关于：" + esc(t.context.label) : t.context?.roomId ? "关于：" + esc(state.published.rooms.find((r) => r.id === t.context.roomId)?.name || "房间") : t.context?.spaceName ? "关于：" + esc(t.context.spaceName) : "来自本店AI管家会话"}</p><span class="ticket-bottom"><span>${t.status === "replied" ? "查看人工答复" : "查看问题并回复"}</span>${icon("arrow")}</span></button>`;
 	}
 	function merchantHome() {
 		const list = pending(), summary = merchantPendingSummary(workspace, merchantId);
@@ -7915,11 +8460,11 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 		const t = state.tickets[parts()[2]];
 		if (!t) return "<div class=\"page-pad\">咨询不存在，请返回工作台。</div>";
 		const a = state.threads[t.threadId]?.messages.find((m) => m.id === t.messageId);
-		return `<div class="page-pad"><p class="notice">${esc(state.published.name)} · ${esc(t.context?.roomId ? state.published.rooms.find((r) => r.id === t.context.roomId)?.name || "原房间" : t.context?.unitId === "whole" ? "整院包栋" : "本房源咨询")}</p><p class="reply-label">客人的原问题 · ${time(t.createdAt)}</p><div class="reply-question">${esc(t.question)}</div><p class="reply-ai"><strong>AI此前的答复</strong><br>${esc(a?.body || "暂无记录").replace(/\n/g, "<br>")}</p><div class="panel-line"><span>人工处理状态</span><span class="status-tag ${t.status === "replied" ? "done" : ""}">${{
+		return `<div class="page-pad"><p class="notice">${esc(state.published.name)} · ${esc(t.context?.label || (t.context?.roomId ? state.published.rooms.find((r) => r.id === t.context.roomId)?.name || "原房间" : t.context?.unitId === "whole" ? "整院包栋" : "本房源咨询"))}</p><p class="reply-label">客人的原问题 · ${time(t.createdAt)}</p><div class="reply-question">${esc(t.question)}</div><p class="reply-ai"><strong>AI此前的答复</strong><br>${esc(a?.body || "暂无记录").replace(/\n/g, "<br>")}</p><div class="panel-line"><span>人工处理状态</span><span class="status-tag ${t.status === "replied" ? "done" : ""}">${{
 			pending: "待接手",
 			processing: "处理中",
 			replied: "已回复"
-		}[t.status]}</span></div>${ticketServiceMarkup(activePropertyId, t, state.published.knowledge)}${t.status === "replied" ? `<div class="section-title"><h2>已发送的人工答复</h2></div><p class="reply-question">${esc(t.reply.body)}</p><p class="notice">已回到客人的原会话。这条人工答复没有自动成为公开知识。</p>${btn("整理为公开问答", "ticket-knowledge", "secondary wide", `data-ticket="${t.id}"`)}<button class="text-btn" data-action="preview-thread" data-ticket="${t.id}">查看客人原会话（只读） ${icon("arrow")}</button>` : `${t.status === "pending" ? `<div style="margin-top:18px">${btn("接手这条咨询", "accept", "secondary wide", `data-ticket="${t.id}"`)}</div>` : ""}<form id="reply-form" class="reply-form" data-ticket="${t.id}"><label class="field">给这位客人的回复<textarea id="reply-body" name="reply" placeholder="根据实际情况回复这位客人…" maxlength="1000" required></textarea><small>发送后显示为“民宿管家 · 人工回复”，仅进入此会话。</small></label><button class="btn wide" type="submit">发送人工答复 ${icon("arrow")}</button></form>`}</div>`;
+		}[t.status]}</span></div>${ticketServiceMarkup(activePropertyId, t, state.published.knowledge)}${t.status === "replied" ? `<div class="section-title"><h2>已发送的人工答复</h2></div><p class="reply-question">${esc(t.reply.body)}</p><p class="notice">已回到客人的原会话。这条人工答复没有自动成为公开知识。</p>${btn("回客人端看回复", "view-reply", "secondary wide", `data-ticket="${t.id}"`)}${btn("整理为公开问答", "ticket-knowledge", "secondary wide", `data-ticket="${t.id}"`)}<button class="text-btn" data-action="preview-thread" data-ticket="${t.id}">查看客人原会话（只读） ${icon("arrow")}</button>` : `${t.status === "pending" ? `<div style="margin-top:18px">${btn("接手这条咨询", "accept", "secondary wide", `data-ticket="${t.id}"`)}</div>` : ""}<form id="reply-form" class="reply-form" data-ticket="${t.id}"><label class="field">给这位客人的回复<textarea id="reply-body" name="reply" placeholder="根据实际情况回复这位客人…" maxlength="1000" required></textarea><small>发送后显示为“民宿管家 · 人工回复”，仅进入此会话。</small></label><button class="btn wide" type="submit">发送人工答复 ${icon("arrow")}</button></form>`}</div>`;
 	}
 	function editor() {
 		const d = editorCache || state.draft;
@@ -8036,7 +8581,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 					"平台端",
 					"资料与活动"
 				]
-			].map(([key, label, hint]) => `<button data-action="role" data-role="${key}" class="${role() === key ? "active" : ""}" aria-pressed="${role() === key}"><strong>${label}</strong><small>${hint}</small></button>`).join("")}</nav>${demoSelectors()}` : "";
+			].map(([key, label, hint]) => `<button data-action="role" data-role="${key}" class="${role() === key ? "active" : ""}" aria-pressed="${role() === key}"><strong>${label}</strong><small>${hint}</small></button>`).join("")}</nav>${demoSelectors()}<button class="text-btn" data-action="legacy-life-archive">查看本浏览器旧版向导记录</button>` : "";
 			showDialog(controls ? "演示入口" : "关于这个演示", `${controls}<p class="dialog-copy">房源与本地生活为示例内容，VR为第三方参考案例。AI按已公开资料做本地问答演示，尚未连接真实模型。\n\n资料和咨询保存在当前浏览器，各设备独立；尚未接入真实登录与通知。</p>`);
 			return;
 		}
@@ -8115,7 +8660,7 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 					messageId: b.dataset.message
 				}, "guest")) {
 					render();
-					toast("已交给管家，可切到商家端接手。");
+					toast("本机演示已留存，不等于真人已收到。");
 				}
 			});
 			return;
@@ -8128,6 +8673,20 @@ if(typeof globalThis.crypto?.randomUUID!=='function'){
 				render();
 				toast("已接手，填写实际答复后发送。");
 			}
+			return;
+		}
+		if (a === "view-reply") {
+			const t = state.tickets[b.dataset.ticket], thread = state.threads[t?.threadId], unit = t?.context?.unitId || "all", owner = activePropertyId === "legacy" && unit === "all" ? sessionId : sessionId + ":" + activePropertyId + ":" + unit;
+			if (!thread || thread.owner !== owner) {
+				toast("只能从原客人演示身份查看回复；商家可使用只读会话预览。");
+				return;
+			}
+			const u = new URL(location.href);
+			u.searchParams.delete("share");
+			if (unit !== "all") u.searchParams.set("unit", unit);
+			else u.searchParams.delete("unit");
+			u.hash = t.context?.scope === "local" ? "/guest/life-chat" : "/guest/chat";
+			location.href = u.href;
 			return;
 		}
 		if (a === "ticket-knowledge") {
